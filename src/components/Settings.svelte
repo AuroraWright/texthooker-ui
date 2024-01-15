@@ -40,7 +40,8 @@
 		preserveWhitespace$,
 		preventGlobalDuplicate$,
 		preventLastDuplicate$,
-		reconnectSocket$,
+		reconnectSocket1$,
+		reconnectSocket2$,
 		removeAllWhitespace$,
 		resetAllData,
 		reverseLineOrder$,
@@ -53,7 +54,8 @@
 		theme$,
 		timeValue$,
 		userNotes$,
-		websocketUrl$,
+		websocketUrl1$,
+		websocketUrl2$,
 		windowTitle$,
 	} from '../stores/stores';
 	import { LineType, OnlineFont, Theme, type DialogResult, type LineItem } from '../types';
@@ -98,7 +100,9 @@
 	let fileInput: HTMLInputElement;
 	let clipboardMutationObserver: MutationObserver | undefined;
 
-	$: websocketUrl = $websocketUrl$;
+	$: websocketUrl1 = $websocketUrl1$;
+
+	$: websocketUrl2 = $websocketUrl2$;
 
 	$: document.body.dataset.theme = $theme$;
 
@@ -585,8 +589,14 @@
 		<span class="label-text col-span-2">Websocket</span>
 		<input
 			class="input input-bordered h-8 col-span-2"
-			bind:value={websocketUrl}
-			on:change={() => ($websocketUrl$ = websocketUrl)}
+			bind:value={websocketUrl1}
+			on:change={() => ($websocketUrl1$ = websocketUrl1)}
+		/>
+		<span class="label-text col-span-2">Websocket 2</span>
+		<input
+			class="input input-bordered h-8 col-span-2"
+			bind:value={websocketUrl2}
+			on:change={() => ($websocketUrl2$ = websocketUrl2)}
 		/>
 		<span class="label-text col-span-2">Font Size</span>
 		<input
@@ -733,7 +743,8 @@
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={$continuousReconnect$}
-			on:change={() => reconnectSocket$.next()}
+			on:change={() => reconnectSocket1$.next()}
+			on:change={() => reconnectSocket2$.next()}
 		/>
 		<span class="label-text" style="grid-column: 1/5;">Custom CSS</span>
 		<textarea

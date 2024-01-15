@@ -40,7 +40,8 @@ export enum OnlineFont {
 export interface Settings {
 	theme$: string;
 	windowTitle$: string;
-	websocketUrl$: string;
+	websocketUrl1$: string;
+	websocketUrl2$: string;
 	fontSize$: number;
 	onlineFont$: string;
 	preventLastDuplicate$: number;

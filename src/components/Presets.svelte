@@ -29,7 +29,8 @@
 		preserveWhitespace$,
 		preventGlobalDuplicate$,
 		preventLastDuplicate$,
-		reconnectSocket$,
+		reconnectSocket1$,
+		reconnectSocket2$,
 		removeAllWhitespace$,
 		reverseLineOrder$,
 		settingPresets$,
@@ -39,9 +40,11 @@
 		showSpeed$,
 		showTimer$,
 		skipResetConfirmations$,
-		socketState$,
+		socketState1$,
+		socketState2$,
 		theme$,
-		websocketUrl$,
+		websocketUrl1$,
+		websocketUrl2$,
 		windowTitle$,
 	} from '../stores/stores';
 	import type { DialogResult, SettingPreset } from '../types';
@@ -68,7 +71,8 @@
 
 		theme$.next(existingEntry.settings.theme$ ?? defaultSettings.theme$);
 		windowTitle$.next(existingEntry.settings.windowTitle$ ?? defaultSettings.windowTitle$);
-		websocketUrl$.next(existingEntry.settings.websocketUrl$ ?? defaultSettings.websocketUrl$);
+		websocketUrl1$.next(existingEntry.settings.websocketUrl$ ?? defaultSettings.websocketUrl1$);
+		websocketUrl2$.next(existingEntry.settings.websocketUrl2$ ?? defaultSettings.websocketUrl2$);
 		fontSize$.next(existingEntry.settings.fontSize$ ?? defaultSettings.fontSize$);
 		onlineFont$.next(existingEntry.settings.onlineFont$ ?? defaultSettings.onlineFont$);
 		preventLastDuplicate$.next(
@@ -127,8 +131,11 @@
 		tick().then(() => {
 			dispatch('layoutChange');
 
-			if ($socketState$ !== 1 && $continuousReconnect$) {
-				reconnectSocket$.next();
+			if ($socketState1$ !== 1 && $continuousReconnect$) {
+				reconnectSocket1$.next();
+			}
+			if ($socketState2$ !== 1 && $continuousReconnect$) {
+				reconnectSocket2$.next();
 			}
 		});
 	}
@@ -154,7 +161,8 @@
 			settings: {
 				theme$: $theme$,
 				windowTitle$: $windowTitle$,
-				websocketUrl$: $websocketUrl$,
+				websocketUrl$: $websocketUrl1$,
+				websocketUrl2$: $websocketUrl2$,
 				fontSize$: $fontSize$,
 				onlineFont$: $onlineFont$,
 				preventLastDuplicate$: $preventLastDuplicate$,

@@ -1,18 +1,28 @@
 import { NEVER, Subscription, filter, switchMap } from 'rxjs';
-import { continuousReconnect$, newLine$, reconnectSocket$, socketState$, websocketUrl$ } from './stores/stores';
+import { continuousReconnect$, newLine$ } from './stores/stores';
 
 import { LineType } from './types';
 
 export class SocketConnection {
+	private readonly socketState$: object;
+
+	private readonly websocketUrl$: object;
+
+	private readonly reconnectSocket$: object;
+
 	private websocketUrl: string;
 
 	private socket: WebSocket | undefined;
 
 	private subscriptions: Subscription[] = [];
 
-	constructor() {
+	constructor(reconnectSocket$, socketState$, websocketUrl$) {
+		this.websocketUrl$ = websocketUrl$;
+		this.socketState$ = socketState$;
+		this.reconnectSocket$ = reconnectSocket$;
+
 		this.subscriptions.push(
-			websocketUrl$.subscribe((websocketUrl) => {
+			this.websocketUrl$.subscribe((websocketUrl) => {
 				if (websocketUrl !== this.websocketUrl) {
 					this.websocketUrl = websocketUrl;
 					this.reloadSocket();
@@ -21,7 +31,7 @@ export class SocketConnection {
 			continuousReconnect$
 				.pipe(
 					switchMap((continuousReconnect) =>
-						continuousReconnect ? reconnectSocket$.pipe(filter(() => this.socket?.readyState === 3)) : NEVER
+						continuousReconnect ? this.reconnectSocket$.pipe(filter(() => this.socket?.readyState === 3)) : NEVER
 					)
 				)
 				.subscribe(() => this.reloadSocket())
@@ -38,11 +48,11 @@ export class SocketConnection {
 		}
 
 		if (!this.websocketUrl) {
-			socketState$.next(3);
+			this.socketState$.next(3);
 			return;
 		}
 
-		socketState$.next(0);
+		this.socketState$.next(0);
 
 		try {
 			this.socket = new WebSocket(this.websocketUrl);
@@ -50,7 +60,7 @@ export class SocketConnection {
 			this.socket.onclose = this.updateSocketState.bind(this);
 			this.socket.onmessage = this.handleMessage.bind(this);
 		} catch (error) {
-			socketState$.next(3);
+			this.socketState$.next(3);
 		}
 	}
 
@@ -79,7 +89,7 @@ export class SocketConnection {
 			return;
 		}
 
-		socketState$.next(this.socket.readyState);
+		this.socketState$.next(this.socket.readyState);
 	}
 
 	private handleMessage(event: MessageEvent) {

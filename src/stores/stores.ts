@@ -20,7 +20,8 @@ import { writableSubject } from './transformer/writeable-subject';
 export const defaultSettings: Settings = {
 	theme$: Theme.BUSINESS,
 	windowTitle$: '',
-	websocketUrl$: 'ws://localhost:6677',
+	websocketUrl1$: 'ws://localhost:6677',
+	websocketUrl2$: 'ws://localhost:7331',
 	fontSize$: 24,
 	onlineFont$: OnlineFont.OFF,
 	preventLastDuplicate$: 0,
@@ -61,7 +62,9 @@ export const settingPresets$ = writeableArraySubject<SettingPreset>()('bannou-te
 
 export const windowTitle$ = writableStringSubject()('bannou-texthooker-windowTitle', defaultSettings.windowTitle$);
 
-export const websocketUrl$ = writableStringSubject()('bannou-texthooker-websocketUrl', defaultSettings.websocketUrl$);
+export const websocketUrl1$ = writableStringSubject()('bannou-texthooker-websocketUrl', defaultSettings.websocketUrl1$);
+
+export const websocketUrl2$ = writableStringSubject()('bannou-texthooker-websocketUrl2', defaultSettings.websocketUrl2$);
 
 export const fontSize$ = writableNumberSubject()('bannou-texthooker-fontSize', defaultSettings.fontSize$);
 
@@ -196,7 +199,9 @@ export const notesOpen$ = writableSubject<boolean>(false);
 
 export const userNotes$ = writableStringSubject()('bannou-texthooker-userNotes', '', persistNotes$);
 
-export const socketState$ = writableSubject<number>(-1);
+export const socketState1$ = writableSubject<number>(-1);
+
+export const socketState2$ = writableSubject<number>(-1);
 
 export const openDialog$ = writableSubject<Record<string, any>>(undefined);
 
@@ -218,7 +223,9 @@ export const isPaused$ = writableSubject<boolean>(true);
 
 export const newLine$ = new Subject<[string, LineType]>();
 
-export const reconnectSocket$ = new Subject<void>();
+export const reconnectSocket1$ = new Subject<void>();
+
+export const reconnectSocket2$ = new Subject<void>();
 
 export async function resetAllData() {
 	if (!skipResetConfirmations$.getValue()) {
@@ -251,7 +258,8 @@ export async function resetAllData() {
 
 	theme$.next(defaultSettings.theme$);
 	windowTitle$.next(defaultSettings.windowTitle$);
-	websocketUrl$.next(defaultSettings.websocketUrl$);
+	websocketUrl1$.next(defaultSettings.websocketUrl1$);
+	websocketUrl2$.next(defaultSettings.websocketUrl2$);
 	fontSize$.next(defaultSettings.fontSize$);
 	onlineFont$.next(defaultSettings.onlineFont$);
 	preventLastDuplicate$.next(defaultSettings.preventLastDuplicate$);

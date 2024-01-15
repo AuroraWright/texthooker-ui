@@ -6,18 +6,23 @@
 		continuousReconnect$,
 		isPaused$,
 		openDialog$,
-		reconnectSocket$,
-		socketState$,
-		websocketUrl$,
+		reconnectSocket1$,
+		reconnectSocket2$,
+		socketState1$,
+		socketState2$,
+		websocketUrl1$,
+		websocketUrl2$,
 	} from '../stores/stores';
 	import Icon from './Icon.svelte';
 
+	export let socketId: int;
 	let socketConnection: SocketConnection | undefined;
 	let intitialAttemptDone = false;
 	let wasConnected = false;
 	let closeRequested = false;
-
-	$: connectedWithLabel = updateConnectedWithLabel(wasConnected);
+	const reconnectSocket$ = socketId ? reconnectSocket2$ : reconnectSocket1$;
+	const socketState$ = socketId ? socketState2$ : socketState1$;
+	const websocketUrl$ = socketId ? websocketUrl2$ : websocketUrl1$;
 
 	$: handleSocketState($socketState$);
 
@@ -74,7 +79,7 @@
 			closeRequested = true;
 			socketConnection.disconnect();
 		} else {
-			socketConnection = socketConnection || new SocketConnection();
+			socketConnection = socketConnection || new SocketConnection(reconnectSocket$, socketState$, websocketUrl$);
 			socketConnection.connect();
 		}
 	}
@@ -85,7 +90,7 @@
 		class="hover:text-primary"
 		class:text-red-500={$socketState$ !== -1}
 		class:text-green-700={$socketState$ === 1}
-		title={connectedWithLabel}
+		title={updateConnectedWithLabel(wasConnected)}
 	>
 		<Icon path={mdiConnection} class="cursor-pointer mx-2" on:click={toggleSocket} />
 	</div>
