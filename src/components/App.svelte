@@ -116,13 +116,6 @@
 				hasNoUserInteraction &&
 				!skipExternalLine
 			) {
-				if (
-					$isPaused$ &&
-					(($autoStartTimerDuringPausePaste$ && isPaste) || ($autoStartTimerDuringPause$ && !isPaste))
-				) {
-					$isPaused$ = false;
-				}
-
 				return true;
 			}
 
@@ -133,14 +126,23 @@
 			return false;
 		}),
 		tap((newLine: [string, LineType]) => {
-			const [lineContent] = newLine;
+			const [lineContent, lineType] = newLine;
 			const text = transformLine(lineContent);
 
 			if (text) {
+				const isPaste = lineType === LineType.PASTE;
+
 				$lineData$ = applyEqualLineStartMerge([
 					...applyMaxLinesAndGetRemainingLineData(1),
 					{ id: generateRandomUUID(), text },
 				]);
+
+				if (
+					$isPaused$ &&
+					(($autoStartTimerDuringPausePaste$ && isPaste) || ($autoStartTimerDuringPause$ && !isPaste))
+				) {
+					$isPaused$ = false;
+				}
 			}
 		}),
 		reduceToEmptyString(),
