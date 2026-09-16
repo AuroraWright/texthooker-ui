@@ -162,7 +162,11 @@
 	}
 
 	function countUnicodeCharacters(s: string) {
-		return Array.from(s).length;
+		let count = 0;
+		for (const _ of s) {
+			count += 1;
+		}
+		return count;
 	}
 
 	function buildString(currentTime: number, currentSpeed: number, currentCharacters: number, currentLines: number) {

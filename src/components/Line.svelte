@@ -94,6 +94,13 @@
 			});
 		}
 	}
+
+	function lineFly(node: HTMLElement) {
+		if (!$enableLineAnimation$) {
+			return { duration: 0 };
+		}
+		return fly(node, { x: isVerticalDisplay ? 100 : -100, duration: 250 });
+	}
 </script>
 
 {#key line.text}
@@ -112,7 +119,7 @@
 		on:dblclick={handleDblClick}
 		on:keyup={dummyFn}
 		bind:this={paragraph}
-		in:fly={{ x: isVerticalDisplay ? 100 : -100, duration: $enableLineAnimation$ ? 250 : 0 }}
+		in:lineFly|local
 	>
 		{line.text}
 	</p>

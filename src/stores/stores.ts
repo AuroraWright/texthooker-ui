@@ -12,7 +12,9 @@ import {
 import { mdiHelpCircle } from '@mdi/js';
 import { Subject } from 'rxjs';
 import { writable } from 'svelte/store';
+import { removeIDBItem } from '../idb';
 import { writableBooleanSubject } from './transformer/writeable-boolean-subject';
+import { writableIDBArraySubject, writableIDBStringSubject } from './transformer/writeable-idb-subject';
 import { writableNumberSubject } from './transformer/writeable-number-subject';
 import { writeableArraySubject } from './transformer/writeable-object-sibject';
 import { writableStringSubject } from './transformer/writeable-string-subject';
@@ -252,7 +254,7 @@ export const timeValue$ = writableNumberSubject()('bannou-texthooker-timeValue',
 
 export const notesOpen$ = writableBooleanSubject()('bannou-texthooker-notesOpen', false);
 
-export const userNotes$ = writableStringSubject()('bannou-texthooker-userNotes', '', persistNotes$);
+export const userNotes$ = writableIDBStringSubject()('bannou-texthooker-userNotes', '', persistNotes$);
 
 export const socketState$ = writableSubject<number>(-1);
 
@@ -264,11 +266,21 @@ export const dialogOpen$ = writableSubject<boolean>(false);
 
 export const lastSettingPreset$ = writableStringSubject()('bannou-texthooker-lastSettingPreset', '');
 
-export const lineData$ = writeableArraySubject<LineItem>()('bannou-texthooker-lineData', [], persistLines$);
+export const showSpinner$ = writable<boolean>(true);
+
+export const lineData$ = writableIDBArraySubject<LineItem>()(
+	'bannou-texthooker-lineData',
+	[],
+	persistLines$,
+	() => {
+		preventGlobalDuplicate$.next(preventGlobalDuplicate$.getValue());
+		showSpinner$.set(false);
+	}
+);
 
 export const milestoneLines$ = writable<Map<string, string>>(new Map<string, string>());
 
-export const actionHistory$ = writeableArraySubject<LineItem[]>()(
+export const actionHistory$ = writableIDBArraySubject<LineItem[]>()(
 	'bannou-texthooker-actionHistory',
 	[],
 	persistActionHistory$
@@ -283,8 +295,6 @@ export const newLine$ = new Subject<[string, LineType]>();
 export const reconnectSocket$ = new Subject<void>();
 
 export const reconnectSecondarySocket$ = new Subject<void>();
-
-export const showSpinner$ = writable<boolean>(false);
 
 export const enabledReplacements$ = writable<ReplacementItem[]>([]);
 
@@ -320,6 +330,9 @@ export async function resetAllData() {
 	window.localStorage.removeItem('bannou-texthooker-userNotes');
 	window.localStorage.removeItem('bannou-texthooker-lineData');
 	window.localStorage.removeItem('bannou-texthooker-actionHistory');
+	await removeIDBItem('bannou-texthooker-lineData');
+	await removeIDBItem('bannou-texthooker-userNotes');
+	await removeIDBItem('bannou-texthooker-actionHistory');
 
 	theme$.next(defaultSettings.theme$);
 	replacements$.next(defaultSettings.replacements$);

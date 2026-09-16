@@ -10,6 +10,7 @@
 		mdiWhiteBalanceSunny,
 	} from '@mdi/js';
 	import { createEventDispatcher, tick } from 'svelte';
+	import { removeIDBItem } from '../idb';
 	import {
 		actionHistory$,
 		adjustTimerOnAfk$,
@@ -112,9 +113,17 @@
 		$lineData$ = [];
 		selectedLineIds = [];
 		window.localStorage.removeItem('bannou-texthooker-lineData');
+		await removeIDBItem('bannou-texthooker-lineData');
 
 		if (!linesOnly) {
 			$timeValue$ = 0;
+			$userNotes$ = '';
+			$actionHistory$ = [];
+			window.localStorage.removeItem('bannou-texthooker-timeValue');
+			window.localStorage.removeItem('bannou-texthooker-userNotes');
+			await removeIDBItem('bannou-texthooker-userNotes');
+			window.localStorage.removeItem('bannou-texthooker-actionHistory');
+			await removeIDBItem('bannou-texthooker-actionHistory');
 		}
 	}
 
@@ -405,8 +414,9 @@
 		});
 
 		if (!canceled) {
-			window.localStorage.removeItem(storageKey);
-		}
+                   window.localStorage.removeItem(storageKey);
+                   await removeIDBItem(storageKey);
+               }
 	}
 
 	function handleCharacterMilestoneBlur(event) {
@@ -752,47 +762,6 @@
 				</div>
 			</div>
 		</div>
-		<details role="button" class="col-span-4 mb-2">
-			<summary>Links</summary>
-			<ul>
-				<li class="my-0.5 hover:text-primary">
-					<a href="https://github.com/Renji-XD/texthooker-ui" target="_blank" rel="noreferrer">
-						texthooker-ui Repository
-					</a>
-				</li>
-				<li class="my-0.5 hover:text-primary">
-					<a href="https://github.com/Artikash/Textractor" target="_blank" rel="noreferrer">Textractor</a>
-				</li>
-				<li class="my-0.5 hover:text-primary">
-					<a href="https://github.com/kuroahna/textractor_websocket" target="_blank" rel="noreferrer">
-						textractor-websocket Extension
-					</a>
-				</li>
-				<li class="my-0.5 hover:text-primary">
-					<a href="https://github.com/KamWithK/TextractorSender" target="_blank" rel="noreferrer">
-						TextractorSender Extension
-					</a>
-				</li>
-				<li class="my-0.5 hover:text-primary">
-					<a href="https://github.com/kuroahna/mpv_websocket" target="_blank" rel="noreferrer">
-						mpv_websocket Plugin
-					</a>
-				</li>
-				<li class="my-0.5 hover:text-primary">
-					<a href="https://github.com/0xDC00/agent" target="_blank" rel="noreferrer"> Agent </a>
-				</li>
-				<li class="my-0.5 hover:text-primary">
-					<a href="https://github.com/kmltml/clipboard-inserter" target="_blank" rel="noreferrer">
-						Clipboard Inserter
-					</a>
-				</li>
-				<li class="my-0.5 hover:text-primary">
-					<a href="https://github.com/laplus-sadness/lap-clipboard-inserter" target="_blank" rel="noreferrer">
-						lap-clipboard-inserter
-					</a>
-				</li>
-			</ul>
-		</details>
 		<Presets
 			on:layoutChange
 			on:exportImportPreset={({ detail }) => handleExportImportPreset(detail)}
