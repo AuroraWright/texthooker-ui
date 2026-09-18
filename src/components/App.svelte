@@ -26,6 +26,7 @@
 		dialogOpen$,
 		displayVertical$,
 		enabledReplacements$,
+		enableLineAnimation$,
 		enablePaste$,
 		filterNonCJKLines$,
 		flashOnMissedLine$,
@@ -80,7 +81,6 @@
 	let settingsElement: SVGElement;
 	let settingsOpen = false;
 	let lineContainer: HTMLElement;
-	let lineElements: Line[] = [];
 	let lineInEdit = false;
 	let blockNextExternalLine = false;
 	let wakeLock = null;
@@ -88,6 +88,7 @@
 	let pipWindow: Window | undefined;
 	let pipResizeTimeout: number;
 	let hasPipFocus = false;
+	let initialScrollDone = false;
 
 	const wakeLockAvailable = 'wakeLock' in navigator;
 
@@ -132,10 +133,10 @@
 			if (text) {
 				const isPaste = lineType === LineType.PASTE;
 
-				$lineData$ = applyEqualLineStartMerge([
-					...applyMaxLinesAndGetRemainingLineData(1),
-					{ id: generateRandomUUID(), text },
-				]);
+				const currentLines = applyMaxLinesAndGetRemainingLineData(1);
+				currentLines.push({ id: generateRandomUUID(), text });
+				$lineData$ = applyEqualLineStartMerge(currentLines);
+				tick().then(executeUpdateScroll);
 
 				if (
 					$isPaused$ &&
@@ -201,6 +202,12 @@
 		applyCustomCSS(pipWindow.document, $customCSS$);
 	}
 
+	// Trigger scroll on initial load completion
+	$: if (!$showSpinner$ && !initialScrollDone) {
+		initialScrollDone = true;
+		tick().then(executeUpdateScroll);
+	}
+
 	onMount(() => {
 		mountFunction();
 		if (wakeLockAvailable) {
@@ -232,12 +239,23 @@
 			if (window.getSelection()?.toString().trim()) {
 				const range = window.getSelection().getRangeAt(0);
 
-				for (let index = 0, { length } = lineElements; index < length; index += 1) {
-					const lineElement = lineElements[index];
-					const selectedId = lineElement?.getIdIfSelected(range);
+				const startEl = range.startContainer.nodeType === 3 ? range.startContainer.parentElement : range.startContainer;
+				const endEl = range.endContainer.nodeType === 3 ? range.endContainer.parentElement : range.endContainer;
+				const startLine = (startEl as HTMLElement)?.closest?.('[data-line-id]') as HTMLElement;
+				const endLine = (endEl as HTMLElement)?.closest?.('[data-line-id]') as HTMLElement;
 
-					if (selectedId) {
-						selectedLineIds.push(selectedId);
+				if (startLine && endLine) {
+					const position = startLine.compareDocumentPosition(endLine);
+					let current = (position & Node.DOCUMENT_POSITION_PRECEDING) ? endLine : startLine;
+					const last = (position & Node.DOCUMENT_POSITION_PRECEDING) ? startLine : endLine;
+
+					while (current) {
+						const id = current.dataset.lineId;
+						if (id && !selectedLineIds.includes(id)) {
+							selectedLineIds = [...selectedLineIds, id];
+						}
+						if (current === last) break;
+						current = current.nextElementSibling as HTMLElement;
 					}
 				}
 			}
@@ -332,10 +350,6 @@
 	}
 
 	function deselectLines() {
-		for (let index = 0, { length } = lineElements; index < length; index += 1) {
-			lineElements[index]?.deselect();
-		}
-
 		selectedLineIds = [];
 	}
 
@@ -432,10 +446,11 @@
 	}
 
 	function executeUpdateScroll() {
-		updateScroll(window, lineContainer, $reverseLineOrder$, $displayVertical$);
+		const behavior = $enableLineAnimation$ ? 'smooth' : 'auto';
+		updateScroll(window, lineContainer, $reverseLineOrder$, $displayVertical$, behavior);
 
 		if (pipWindow) {
-			updateScroll(pipWindow, pipContainer, $reverseLineOrder$, false);
+			updateScroll(pipWindow, pipContainer, $reverseLineOrder$, false, behavior);
 		}
 	}
 
@@ -487,25 +502,19 @@
 		const { inEdit, data } = event.detail as LineItemEditEvent;
 
 		if (data && data.originalText !== data.newText) {
-			const text = transformLine(data.newText);
-
-			$lineData$[data.lineIndex] = {
-				id: data.line.id,
-				text,
-			};
-
-			if (text) {
-				$actionHistory$ = [...$actionHistory$, [{ ...data.line, index: data.lineIndex }]];
-				$uniqueLines$.delete(data.originalText);
-				$uniqueLines$.add(text);
-			} else {
-				tick().then(
-					() =>
-						($lineData$[data.lineIndex] = {
-							id: data.line.id,
-							text: data.originalText,
-						}),
-				);
+			const lineIndex = $lineData$.findIndex(l => l.id === data.line.id);
+			if (lineIndex !== -1) {
+				const text = transformLine(data.newText);
+				$lineData$[lineIndex] = { id: data.line.id, text };
+				if (text) {
+					const currentHistory = $actionHistory$;
+					currentHistory.push([{ ...data.line, index: lineIndex }]);
+					$actionHistory$ = currentHistory;
+					$uniqueLines$.delete(data.originalText);
+					$uniqueLines$.add(text);
+				} else {
+					tick().then(() => ($lineData$[lineIndex] = { id: data.line.id, text: data.originalText }));
+				}
 			}
 		}
 
@@ -513,38 +522,33 @@
 	}
 
 	function applyMaxLinesAndGetRemainingLineData(diffMod = 0) {
-		const oldLinesToRemove = new Set<string>();
 		const startIndex = $maxLines$ ? $lineData$.length - $maxLines$ + diffMod : 0;
-		const remainingLineData =
-			startIndex > 0
-				? $lineData$.filter((oldLine, index) => {
-						if (index < startIndex) {
-							oldLinesToRemove.add(oldLine.id);
-
-							$uniqueLines$.delete(oldLine.text);
-							return false;
-						}
-
-						return true;
-					})
-				: $lineData$;
-
-		if (oldLinesToRemove.size) {
-			selectedLineIds = selectedLineIds.filter((selectedLineId) => !oldLinesToRemove.has(selectedLineId));
+		if (startIndex > 0) {
+			const oldLinesToRemove = new Set<string>();
+			const removed = $lineData$.splice(0, startIndex);
+			for (let i = 0; i < removed.length; i++) {
+				oldLinesToRemove.add(removed[i].id);
+				$uniqueLines$.delete(removed[i].text);
+			}
+			if (oldLinesToRemove.size) {
+				selectedLineIds = selectedLineIds.filter((selectedLineId) => !oldLinesToRemove.has(selectedLineId));
+			}
 		}
-
-		return remainingLineData;
+		return $lineData$;
 	}
 
-	function updateLineData(executeUpdate: boolean) {
+	async function updateLineData(executeUpdate: boolean) {
 		if (!executeUpdate) {
 			return;
 		}
 
 		$showSpinner$ = true;
+		await tick();
 
 		try {
-			for (let index = 0, { length } = $lineData$; index < length; index += 1) {
+			let hasChanges = false;
+			const CHUNK_SIZE = 100;
+			for (let index = 0, { length } = $lineData$; index < length; index++) {
 				const line = $lineData$[index];
 				const newText = transformLine(line.text);
 
@@ -552,24 +556,28 @@
 					$uniqueLines$.delete(line.text);
 
 					$lineData$[index] = { ...line, text: newText };
+					hasChanges = true;
+				}
+				if (index > 0 && index % CHUNK_SIZE === 0) {
+					await new Promise(resolve => setTimeout(resolve, 0));
 				}
 			}
-
-			$openDialog$ = {
-				message: `Operation executed`,
-				showCancel: false,
-			};
+			if (hasChanges) {
+				$openDialog$ = {
+					message: `Operation executed`,
+					showCancel: false,
+				};
+			}
 		} catch ({ message }) {
 			$openDialog$ = {
 				type: 'error',
 				message: `An Error occured: ${message}`,
 				showCancel: false,
 			};
+		} finally {
+			$lineData$ = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData());
+			$showSpinner$ = false;
 		}
-
-		$lineData$ = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData());
-
-		$showSpinner$ = false;
 	}
 
 	function applyEqualLineStartMerge(currentLineData: LineItem[]) {
@@ -610,7 +618,7 @@
 
 <DialogManager />
 
-<header class="fixed top-0 right-0 flex justify-end items-center p-2 bg-base-100" bind:this={settingsContainer}>
+<header class="fixed top-0 right-0 flex justify-end items-center p-2 bg-base-100 z-10" bind:this={settingsContainer}>
 	<Stats on:afkBlur={onAfkBlur} />
 	{#if $websocketUrl$}
 		<SocketConnector />
@@ -708,12 +716,10 @@
 	bind:this={lineContainer}
 >
 	{@html newLineCharacter}
-	{#each $lineData$ as line, index (line.id)}
+	{#each $lineData$ as line (line.id)}
 		<Line
 			{line}
-			{index}
-			isLast={$lineData$.length - 1 === index}
-			bind:this={lineElements[index]}
+			isSelected={selectedLineIds.includes(line.id)}
 			on:selected={({ detail }) => {
 				selectedLineIds = [...selectedLineIds, detail];
 			}}
@@ -742,8 +748,8 @@
 	bind:this={pipContainer}
 >
 	{#if pipWindow}
-		{#each pipLines as line, index (line.id)}
-			<Line {line} {index} {pipWindow} isLast={pipLines.length - 1 === index} />
+		{#each pipLines as line (line.id)}
+			<Line {line} {pipWindow} />
 		{/each}
 	{/if}
 </div>

@@ -351,6 +351,7 @@
 		}
 
 		dataFileInput.value = null;
+		tick().then(() => dispatch('layoutChange'));
 	}
 
 	async function handleSettingsFileChange() {

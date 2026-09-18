@@ -14,38 +14,16 @@
 	import Icon from './Icon.svelte';
 
 	export let line: LineItem;
-	export let index: number;
-	export let isLast: boolean;
 	export let pipWindow: Window = undefined;
-
-	export function deselect() {
-		isSelected = false;
-	}
-
-	export function getIdIfSelected(range: Range) {
-		return isSelected || range.intersectsNode(paragraph) ? line.id : undefined;
-	}
+	export let isSelected = false;
 
 	const dispatch = createEventDispatcher<{ deselected: string; selected: string; edit: LineItemEditEvent }>();
 
 	let paragraph: HTMLElement;
 	let originalText = '';
-	let isSelected = false;
 	let isEditable = false;
 
 	$: isVerticalDisplay = !pipWindow && $displayVertical$;
-
-	onMount(() => {
-		if (isLast) {
-			updateScroll(
-				pipWindow || window,
-				paragraph.parentElement,
-				$reverseLineOrder$,
-				isVerticalDisplay,
-				$enableLineAnimation$ ? 'smooth' : 'auto',
-			);
-		}
-	});
 
 	onDestroy(() => {
 		document.removeEventListener('click', clickOutsideHandler, false);
@@ -61,10 +39,8 @@
 
 		if (event.ctrlKey || event.metaKey) {
 			if (isSelected) {
-				isSelected = false;
 				dispatch('deselected', line.id);
 			} else {
-				isSelected = true;
 				dispatch('selected', line.id);
 			}
 		} else {
@@ -90,7 +66,7 @@
 
 			dispatch('edit', {
 				inEdit: false,
-				data: { originalText, newText: paragraph.innerText, lineIndex: index, line },
+				data: { originalText, newText: paragraph.innerText, lineIndex: -1, line },
 			});
 		}
 	}
@@ -103,27 +79,27 @@
 	}
 </script>
 
-{#key line.text}
-	<p
-		class="my-2 cursor-pointer border-2"
-		class:py-4={!isVerticalDisplay}
-		class:px-2={!isVerticalDisplay}
-		class:py-2={isVerticalDisplay}
-		class:px-4={isVerticalDisplay}
-		class:border-transparent={!isSelected}
-		class:cursor-text={isEditable}
-		class:border-primary={isSelected}
-		class:border-accent-focus={isEditable}
-		class:whitespace-pre-wrap={$preserveWhitespace$}
-		contenteditable={isEditable}
-		on:dblclick={handleDblClick}
-		on:keyup={dummyFn}
-		bind:this={paragraph}
-		in:lineFly|local
-	>
-		{line.text}
-	</p>
-{/key}
+<p data-line-id={line.id}
+	class="my-2 cursor-pointer border-2"
+	class:py-4={!isVerticalDisplay}
+	class:px-2={!isVerticalDisplay}
+	class:py-2={isVerticalDisplay}
+	class:px-4={isVerticalDisplay}
+	class:border-transparent={!isSelected}
+	class:cursor-text={isEditable}
+	class:border-primary={isSelected}
+	class:border-accent-focus={isEditable}
+	class:whitespace-pre-wrap={$preserveWhitespace$}
+	contenteditable={isEditable}
+	on:dblclick={handleDblClick}
+	on:keyup={dummyFn}
+	bind:this={paragraph}
+	style:content-visibility={!pipWindow ? "auto" : undefined}
+	style:contain-intrinsic-size={!pipWindow ? "auto 3rem" : undefined}
+	in:lineFly|local
+>
+	{line.text}
+</p>
 {@html newLineCharacter}
 {#if $milestoneLines$.has(line.id)}
 	<div

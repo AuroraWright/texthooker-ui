@@ -34,6 +34,10 @@
 	let lastTick = 0;
 	let idleTime = 0;
 
+	let charCountCache = new Map<string, number>();
+	let cachedLineTexts = new Map<string, string>();
+	let lastProcessedLineCount = 0;
+
 	const dispatch = createEventDispatcher<{ afkBlur: boolean }>();
 
 	const isNotJapaneseRegex = /[^0-9A-Z○◯々-〇〻ぁ-ゖゝ-ゞァ-ヺー０-９Ａ-Ｚｦ-ﾝ\p{Radical}\p{Unified_Ideograph}]+/gimu;
@@ -78,29 +82,45 @@
 	let statstring = '';
 
 	$: if (($showCharacterCount$ || $characterMilestone$ > 1) && $lineData$) {
-		const newMilestoneLines = new Map<string, string>();
-
-		let newCount = 0;
+		let currentCount = 0;
 		let nextMilestone = $characterMilestone$ > 1 ? $characterMilestone$ : 0;
+		const currentIds = new Set<string>();
+		const needsCleanup = $lineData$.length < lastProcessedLineCount;
+		const newMilestones = new Map<string, string>();
+		lastProcessedLineCount = $lineData$.length;
 
-		for (let index = 0, { length } = $lineData$; index < length; index += 1) {
-			newCount += getCharacterCount($lineData$[index].text);
+		for (let i = 0, len = $lineData$.length; i < len; i++) {
+			const line = $lineData$[i];
+			if (needsCleanup) currentIds.add(line.id);
 
-			if (nextMilestone && newCount >= nextMilestone) {
-				let currentCount = newCount;
-				let achievedMilestone = nextMilestone;
+			let lineCharCount = charCountCache.get(line.id);
+			if (lineCharCount === undefined || cachedLineTexts.get(line.id) !== line.text) {
+				lineCharCount = getCharacterCount(line.text);
+				charCountCache.set(line.id, lineCharCount);
+				cachedLineTexts.set(line.id, line.text);
+			}
 
-				newMilestoneLines.set($lineData$[index].id, `Milestone ${achievedMilestone} (${newCount})`);
+			currentCount += lineCharCount;
 
+			if (nextMilestone && currentCount >= nextMilestone) {
+				newMilestones.set(line.id, `Milestone ${nextMilestone} (${currentCount})`);
 				while (currentCount >= nextMilestone) {
 					nextMilestone += $characterMilestone$;
 				}
 			}
 		}
 
-		$milestoneLines$ = newMilestoneLines;
+		if (needsCleanup) {
+			for (const id of charCountCache.keys()) {
+				if (!currentIds.has(id)) {
+					charCountCache.delete(id);
+					cachedLineTexts.delete(id);
+				}
+			}
+		}
 
-		characters = newCount;
+		$milestoneLines$ = newMilestones;
+		characters = currentCount;
 		speed = $timeValue$ ? Math.ceil((3600 * characters) / $timeValue$) : 0;
 	}
 

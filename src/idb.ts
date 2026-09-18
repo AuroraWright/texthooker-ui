@@ -10,23 +10,23 @@ export function getDB(): Promise<IDBDatabase> {
 			if (typeof window === 'undefined' || !('indexedDB' in window)) {
 				return reject(new Error('IndexedDB is not supported in this environment'));
 			}
-            try {
-                const request = indexedDB.open(DB_NAME, DB_VERSION);
-                request.onupgradeneeded = () => {
-                    const db = request.result;
-                    if (!db.objectStoreNames.contains(STORE_NAME)) {
-                        db.createObjectStore(STORE_NAME);
-                    }
-                };
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = () => {
-                    dbPromise = null;
-                    reject(request.error);
-                };
-            } catch (error) {
-                dbPromise = null;
-                reject(error);
-            }
+			try {
+				const request = indexedDB.open(DB_NAME, DB_VERSION);
+				request.onupgradeneeded = () => {
+					const db = request.result;
+					if (!db.objectStoreNames.contains(STORE_NAME)) {
+						db.createObjectStore(STORE_NAME);
+					}
+				};
+				request.onsuccess = () => resolve(request.result);
+				request.onerror = () => {
+					dbPromise = null;
+					reject(request.error);
+				};
+			} catch (error) {
+				dbPromise = null;
+				reject(error);
+			}
 		});
 	}
 	return dbPromise;
