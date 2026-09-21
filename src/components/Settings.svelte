@@ -127,7 +127,7 @@
 		}
 	}
 
-	const dispatch = createEventDispatcher<{ layoutChange: void; maxLinesChange: void }>();
+	const dispatch = createEventDispatcher<{ layoutChange: void; maxLinesChange: void; linesRemoved: string[]; dataImported: void; }>();
 	const onlineFonts = [
 		OnlineFont.OFF,
 		OnlineFont.NOTO,
@@ -351,7 +351,10 @@
 		}
 
 		dataFileInput.value = null;
-		tick().then(() => dispatch('layoutChange'));
+		tick().then(() => {
+    		dispatch('layoutChange');
+    		dispatch('dataImported');
+		});
 	}
 
 	async function handleSettingsFileChange() {
@@ -490,6 +493,10 @@
 
 		$lineData$ = [...$lineData$, ...nonDuplicateLines];
 		selectedLineIds = selectedLineIds.filter((selectedLineId) => !removedIds.has(selectedLineId));
+
+		if (removedIds.size > 0) {
+        	dispatch('linesRemoved', Array.from(removedIds));
+    	}
 	}
 
 	function handleMaxLinesBlur(event) {
@@ -572,6 +579,10 @@
 				return true;
 			});
 			selectedLineIds = selectedLineIds.filter((selectedLineId) => !removedLineIds.has(selectedLineId));
+
+			if (removedLineIds.size > 0) {
+            	dispatch('linesRemoved', Array.from(removedLineIds));
+        	}
 		}
 	}
 

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { mdiTrophy } from '@mdi/js';
-	import { createEventDispatcher, onDestroy, onMount, tick } from 'svelte';
+	import { createEventDispatcher, onDestroy, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import {
 		displayVertical$,
@@ -16,8 +16,13 @@
 	export let line: LineItem;
 	export let pipWindow: Window = undefined;
 	export let isSelected = false;
+	export let isNew = false;
 
-	const dispatch = createEventDispatcher<{ deselected: string; selected: string; edit: LineItemEditEvent }>();
+	const dispatch = createEventDispatcher<{
+		deselected: string;
+		selected: string;
+		edit: LineItemEditEvent;
+	}>();
 
 	let paragraph: HTMLElement;
 	let originalText = '';
@@ -26,8 +31,20 @@
 	$: isVerticalDisplay = !pipWindow && $displayVertical$;
 
 	onDestroy(() => {
-		document.removeEventListener('click', clickOutsideHandler, false);
-		dispatch('edit', { inEdit: false });
+	    document.removeEventListener('click', clickOutsideHandler, false);
+	    
+	    if (isEditable && paragraph) {
+	        isEditable = false;
+	        dispatch('edit', { 
+	            inEdit: false,
+	            data: { 
+	                originalText, 
+	                newText: paragraph.innerText, 
+	                lineIndex: -1, 
+	                line 
+	            }
+	        });
+	    }
 	});
 
 	function handleDblClick(event: MouseEvent) {
@@ -46,11 +63,8 @@
 		} else {
 			originalText = paragraph.innerText;
 			isEditable = true;
-
 			dispatch('edit', { inEdit: true });
-
 			document.addEventListener('click', clickOutsideHandler, false);
-
 			tick().then(() => {
 				paragraph.focus();
 			});
@@ -58,28 +72,29 @@
 	}
 
 	function clickOutsideHandler(event: MouseEvent) {
-		const target = event.target as Node;
-
-		if (!paragraph.contains(target)) {
-			isEditable = false;
-			document.removeEventListener('click', clickOutsideHandler, false);
-
-			dispatch('edit', {
-				inEdit: false,
-				data: { originalText, newText: paragraph.innerText, lineIndex: -1, line },
-			});
-		}
+	    const target = event.target as Node;
+	    if (!paragraph.contains(target)) {
+	        if (isEditable) { // Only dispatch if it hasn't been closed already
+	            isEditable = false;
+	            document.removeEventListener('click', clickOutsideHandler, false);
+	            dispatch('edit', {
+	                inEdit: false,
+	                data: { originalText, newText: paragraph.innerText, lineIndex: -1, line },
+	            });
+	        }
+	    }
 	}
 
 	function lineFly(node: HTMLElement) {
-		if (!$enableLineAnimation$) {
-			return { duration: 0 };
+		if (!$enableLineAnimation$ || !isNew) {
+			return { duration: 0, delay: 0 };
 		}
 		return fly(node, { x: isVerticalDisplay ? 100 : -100, duration: 250 });
 	}
 </script>
 
-<p data-line-id={line.id}
+<p
+	data-line-id={line.id}
 	class="my-2 cursor-pointer border-2"
 	class:py-4={!isVerticalDisplay}
 	class:px-2={!isVerticalDisplay}
@@ -94,8 +109,6 @@
 	on:dblclick={handleDblClick}
 	on:keyup={dummyFn}
 	bind:this={paragraph}
-	style:content-visibility={!pipWindow ? "auto" : undefined}
-	style:contain-intrinsic-size={!pipWindow ? "auto 3rem" : undefined}
 	in:lineFly|local
 >
 	{line.text}
@@ -112,7 +125,7 @@
 		class:px-4={isVerticalDisplay}
 	>
 		<div class="flex items-center">
-			<Icon class={$displayVertical$ ? '' : 'mr-2'} path={mdiTrophy}></Icon>
+			<Icon class={$displayVertical$ ? '' : 'mr-2'} path={mdiTrophy} />
 			<span class:mt-2={$displayVertical$}>{$milestoneLines$.get(line.id)}</span>
 		</div>
 	</div>
