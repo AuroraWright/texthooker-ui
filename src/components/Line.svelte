@@ -109,7 +109,7 @@
 	on:dblclick={handleDblClick}
 	on:keyup={dummyFn}
 	bind:this={paragraph}
-	in:lineFly|local
+	in:lineFly
 >
 	{line.text}
 </p>
