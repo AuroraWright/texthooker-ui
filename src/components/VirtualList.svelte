@@ -22,7 +22,9 @@
 
 	let sizeCache: number[] = [];
 	let offsetCache: number[] = [0];
-	let _prevItemCount: number = 0;
+	let _prevItemCount = itemCount;
+	let _prevScrollDirection = scrollDirection;
+	let _prevEstimatedItemSize = estimatedItemSize;
 
 	export function invalidateItemSizes(indices: number[]) {
 		if (!indices || indices.length === 0) return;
@@ -103,10 +105,11 @@
 			newScrollOffset = Math.max(0, Math.min(maxScroll, newScrollOffset));
 
 			if (scrollDirection === 'vertical') {
-				rootNode.scrollTo({ top: newScrollOffset, behavior });
-			} else {
-				rootNode.scrollTo({ left: rtl ? -newScrollOffset : newScrollOffset, behavior });
-			}
+	            rootNode.scrollTo({ top: newScrollOffset, left: 0, behavior });
+	        }
+	        else {
+	            rootNode.scrollTo({ left: rtl ? -newScrollOffset : newScrollOffset, top: 0, behavior });
+	        }
 			scrollOffset = newScrollOffset;
 			updateState();
 		});
@@ -205,12 +208,29 @@
 		}
 	}
 
-	$: handlePropsChange(itemCount);
-	function handlePropsChange(newCount: number) {
+	$: handlePropsChange(itemCount, scrollDirection, estimatedItemSize);
+	function handlePropsChange(
+		newCount: number,
+		newDirection: 'vertical' | 'horizontal',
+		newEstimatedSize: number
+	) {
+		const directionChanged = newDirection !== _prevScrollDirection;
+		const sizeChanged = newEstimatedSize !== _prevEstimatedItemSize;
 		const hasDecreased = newCount < _prevItemCount;
-		_prevItemCount = newCount;
 
-		if (hasDecreased) {
+		_prevItemCount = newCount;
+		_prevScrollDirection = newDirection;
+		_prevEstimatedItemSize = newEstimatedSize;
+
+		if (directionChanged) {
+			scrollOffset = 0;
+			if (rootNode) {
+				rootNode.scrollTop = 0;
+				rootNode.scrollLeft = 0;
+			}
+		}
+
+		if (directionChanged || sizeChanged || hasDecreased) {
 			clearCacheAndAverage();
 			return;
 		}
