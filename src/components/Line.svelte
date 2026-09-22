@@ -89,7 +89,7 @@
 
 <p
 	data-line-id={line.id}
-	class="my-2 cursor-pointer border-2"
+	class="my-2 cursor-default border-2"
 	class:px-2={!isVerticalDisplay}
 	class:py-2={isVerticalDisplay}
 	style:padding-top={!isVerticalDisplay ? `${$linePadding$}rem` : undefined}
