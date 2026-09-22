@@ -495,6 +495,7 @@
 
 		$lineData$ = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData());
 		$actionHistory$ = $actionHistory$;
+		virtualListRef?.clearCacheAndAverage();
 	}
 
 	function removeLastLine() {
@@ -704,26 +705,25 @@
 	}
 
 	function handleLineEdit(event) {
-		const { inEdit, data } = event.detail as LineItemEditEvent;
+	    const { inEdit, data } = event.detail as LineItemEditEvent;
+	    if (data && data.originalText !== data.newText) {
+	        const lineIndex = $lineData$.findIndex((l) => l.id === data.line.id);
+	        if (lineIndex !== -1) {
+	            $uniqueLines$.delete(data.originalText);
+	            const text = transformLine(data.newText);
 
-		if (data && data.originalText !== data.newText) {
-			const lineIndex = $lineData$.findIndex((l) => l.id === data.line.id);
-			if (lineIndex !== -1) {
-				const text = transformLine(data.newText);
-				$lineData$[lineIndex] = { id: data.line.id, text };
-				if (text) {
-					const currentHistory = $actionHistory$;
-					currentHistory.push([{ ...data.line, index: lineIndex }]);
-					$actionHistory$ = currentHistory;
-					$uniqueLines$.delete(data.originalText);
-					$uniqueLines$.add(text);
-				} else {
-					tick().then(() => ($lineData$[lineIndex] = { id: data.line.id, text: data.originalText }));
-				}
-			}
-		}
-
-		lineInEdit = inEdit;
+	            if (text) {
+	                $lineData$[lineIndex] = { id: data.line.id, text };
+	                const currentHistory = $actionHistory$;
+	                currentHistory.push([{ ...data.line, index: lineIndex }]);
+	                $actionHistory$ = currentHistory;
+	                $uniqueLines$.add(text);
+	            } else {
+	                $uniqueLines$.add(data.originalText);
+	            }
+	        }
+	    }
+	    lineInEdit = inEdit;
 	}
 
 	function applyMaxLinesAndGetRemainingLineData(diffMod = 0) {

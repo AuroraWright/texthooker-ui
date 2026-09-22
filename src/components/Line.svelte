@@ -35,15 +35,7 @@
 	    
 	    if (isEditable && paragraph) {
 	        isEditable = false;
-	        dispatch('edit', { 
-	            inEdit: false,
-	            data: { 
-	                originalText, 
-	                newText: paragraph.innerText, 
-	                lineIndex: -1, 
-	                line 
-	            }
-	        });
+	        dispatch('edit', { inEdit: false });
 	    }
 	});
 

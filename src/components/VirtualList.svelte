@@ -4,7 +4,7 @@
     export let width: string | number = '100%';
     export let height: string | number = '100%';
     export let itemCount: number = 0;
-    export let itemSize: number | number[] | ((index: number) => number);
+    export let itemSize: ((index: number) => number);
     export let estimatedItemSize: number = 50;
     export let scrollDirection: 'vertical' | 'horizontal' = 'vertical';
     export let rtl: boolean = false;
@@ -22,7 +22,6 @@
 
     let sizeCache: number[] = [];
     let offsetCache: number[] = [0];
-    let _prevItemSize: any;
 
     export function invalidateItemSizes(indices: number[]) {
         if (!indices || indices.length === 0) return;
@@ -107,14 +106,9 @@
         let size = dynamicEstimatedSize;
         let isMeasured = false;
 
-        if (typeof itemSize === 'function') {
-            const val = itemSize(index);
-            if (typeof val === 'number' && val > 0) { size = val; isMeasured = true; }
-        } else if (Array.isArray(itemSize)) {
-            const val = itemSize[index];
-            if (typeof val === 'number' && val > 0) { size = val; isMeasured = true; }
-        } else if (typeof itemSize === 'number' && itemSize > 0) {
-            size = itemSize;
+        const val = itemSize(index);
+        if (val !== undefined && val > 0) { 
+            size = val;
             isMeasured = true;
         }
 
@@ -199,16 +193,11 @@
         }
     }
 
-    $: handlePropsChange(itemCount, itemSize);
-    function handlePropsChange(newCount: number, newSize: any) {
-        if (newSize !== _prevItemSize) {
-            sizeCache = [];
-            offsetCache = [0];
-            _prevItemSize = newSize;
-        }
+    $: handlePropsChange(itemCount);
+    function handlePropsChange(newCount: number) {
         if (newCount < sizeCache.length) {
-            sizeCache.length = newCount;
-            offsetCache.length = Math.min(offsetCache.length, newCount + 1);
+            clearCacheAndAverage();
+            return;
         }
         scheduleUpdateState();
     }
