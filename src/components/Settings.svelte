@@ -34,6 +34,7 @@
 		filterNonCJKLines$,
 		flashOnMissedLine$,
 		fontSize$,
+		linePadding$,
 		lastSettingPreset$,
 		lineData$,
 		maxLines$,
@@ -61,6 +62,7 @@
 		showConnectionErrors$,
 		showConnectionIcon$,
 		showLineCount$,
+		showLinePoints$,
 		showPresetQuickSwitch$,
 		showSpeed$,
 		showSpinner$,
@@ -806,6 +808,17 @@
 				}
 			}}
 		/>
+		<span class="label-text col-span-2">Line Padding</span>
+        <input
+			type="number"
+			class="input input-bordered h-8 col-span-2"
+			min="0"
+			bind:value={$linePadding$}
+			on:blur={() => {
+				if ($linePadding$ === null || $linePadding$ < 0) {
+					$linePadding$ = 1;
+				}
+		}} />
 		<span class="label-text col-span-2">Character Milestone</span>
 		<input
 			type="number"
@@ -952,6 +965,8 @@
 			bind:checked={$removeAllWhitespace$}
 			on:change={handleRemoveAllWhiteSpaceChange}
 		/>
+		<span class="label-text">Show Bullet Points</span>
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$showLinePoints$} />
 		<span class="label-text">Show Timer</span>
 		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$showTimer$} />
 		<span class="label-text">Show Speed</span>

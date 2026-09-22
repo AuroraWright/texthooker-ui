@@ -46,6 +46,7 @@ export interface Settings {
 	websocketUrl$: string;
 	secondaryWebsocketUrl$: string;
 	fontSize$: number;
+	linePadding$: number;
 	characterMilestone$: number;
 	onlineFont$: string;
 	preventLastDuplicate$: number;
@@ -74,6 +75,7 @@ export interface Settings {
 	reverseLineOrder$: boolean;
 	preserveWhitespace$: boolean;
 	removeAllWhitespace$: boolean;
+	showLinePoints$: boolean;
 	showTimer$: boolean;
 	showSpeed$: boolean;
 	showCharacterCount$: boolean;

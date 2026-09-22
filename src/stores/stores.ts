@@ -27,6 +27,7 @@ export const defaultSettings: Settings = {
 	websocketUrl$: 'ws://localhost:6677',
 	secondaryWebsocketUrl$: '',
 	fontSize$: 24,
+	linePadding$: 1,
 	characterMilestone$: 0,
 	onlineFont$: OnlineFont.OFF,
 	preventLastDuplicate$: 0,
@@ -55,6 +56,7 @@ export const defaultSettings: Settings = {
 	reverseLineOrder$: false,
 	preserveWhitespace$: true,
 	removeAllWhitespace$: false,
+	showLinePoints$: false,
 	showTimer$: true,
 	showSpeed$: true,
 	showCharacterCount$: true,
@@ -85,6 +87,8 @@ export const secondaryWebsocketUrl$ = writableStringSubject()(
 );
 
 export const fontSize$ = writableNumberSubject()('bannou-texthooker-fontSize', defaultSettings.fontSize$);
+
+export const linePadding$ = writableStringSubject()('bannou-texthooker-linePadding', defaultSettings.linePadding$);
 
 export const characterMilestone$ = writableNumberSubject()(
 	'bannou-texthooker-characterMilestone',
@@ -201,6 +205,8 @@ export const removeAllWhitespace$ = writableBooleanSubject()(
 	'bannou-texthooker-removeAllWhitespace',
 	defaultSettings.removeAllWhitespace$
 );
+
+export const showLinePoints$ = writableBooleanSubject()('bannou-texthooker-showLinePoints', defaultSettings.showLinePoints$);
 
 export const showTimer$ = writableBooleanSubject()('bannou-texthooker-showTimer', defaultSettings.showTimer$);
 
@@ -340,6 +346,7 @@ export async function resetAllData() {
 	websocketUrl$.next(defaultSettings.websocketUrl$);
 	secondaryWebsocketUrl$.next(defaultSettings.secondaryWebsocketUrl$);
 	fontSize$.next(defaultSettings.fontSize$);
+	linePadding$.next(defaultSettings.linePadding$);
 	characterMilestone$.next(defaultSettings.characterMilestone$);
 	onlineFont$.next(defaultSettings.onlineFont$);
 	preventLastDuplicate$.next(defaultSettings.preventLastDuplicate$);
@@ -367,6 +374,7 @@ export async function resetAllData() {
 	reverseLineOrder$.next(defaultSettings.reverseLineOrder$);
 	preserveWhitespace$.next(defaultSettings.preserveWhitespace$);
 	removeAllWhitespace$.next(defaultSettings.removeAllWhitespace$);
+	showLinePoints$.next(defaultSettings.showLinePoints$);
 	showTimer$.next(defaultSettings.showTimer$);
 	showSpeed$.next(defaultSettings.showSpeed$);
 	showCharacterCount$.next(defaultSettings.showCharacterCount$);

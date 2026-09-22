@@ -23,6 +23,7 @@
 		filterNonCJKLines$,
 		flashOnMissedLine$,
 		fontSize$,
+		linePadding$,
 		lastSettingPreset$,
 		maxLines$,
 		maxPipLines$,
@@ -50,6 +51,7 @@
 		showConnectionIcon$,
 		showLineCount$,
 		showPresetQuickSwitch$,
+		showLinePoints$,
 		showSpeed$,
 		showTimer$,
 		skipResetConfirmations$,
@@ -72,6 +74,7 @@
 			websocketUrl$: $websocketUrl$,
 			secondaryWebsocketUrl$: $secondaryWebsocketUrl$,
 			fontSize$: $fontSize$,
+			linePadding$: $linePadding$,
 			characterMilestone$: $characterMilestone$,
 			onlineFont$: $onlineFont$,
 			preventLastDuplicate$: $preventLastDuplicate$,
@@ -100,6 +103,7 @@
 			reverseLineOrder$: $reverseLineOrder$,
 			preserveWhitespace$: $preserveWhitespace$,
 			removeAllWhitespace$: $removeAllWhitespace$,
+			showLinePoints$: $showLinePoints$,
 			showTimer$: $showTimer$,
 			showSpeed$: $showSpeed$,
 			showCharacterCount$: $showCharacterCount$,
@@ -122,6 +126,7 @@
 		websocketUrl$.next(preset.settings.websocketUrl$ ?? defaultSettings.websocketUrl$);
 		secondaryWebsocketUrl$.next(preset.settings.secondaryWebsocketUrl$ ?? '');
 		fontSize$.next(preset.settings.fontSize$ ?? defaultSettings.fontSize$);
+		linePadding$.next(preset.settings.linePadding$ ?? defaultSettings.linePadding$);
 		characterMilestone$.next(preset.settings.characterMilestone$ ?? defaultSettings.characterMilestone$);
 		onlineFont$.next(preset.settings.onlineFont$ ?? defaultSettings.onlineFont$);
 		preventLastDuplicate$.next(preset.settings.preventLastDuplicate$ ?? defaultSettings.preventLastDuplicate$);
@@ -162,6 +167,7 @@
 		reverseLineOrder$.next(preset.settings.reverseLineOrder$ ?? defaultSettings.reverseLineOrder$);
 		preserveWhitespace$.next(preset.settings.preserveWhitespace$ ?? defaultSettings.preserveWhitespace$);
 		removeAllWhitespace$.next(preset.settings.removeAllWhitespace$ ?? defaultSettings.removeAllWhitespace$);
+		showLinePoints$.next(preset.settings.showLinePoints$ ?? defaultSettings.showLinePoints$);
 		showTimer$.next(preset.settings.showTimer$ ?? defaultSettings.showTimer$);
 		showSpeed$.next(preset.settings.showSpeed$ ?? defaultSettings.showSpeed$);
 		showCharacterCount$.next(preset.settings.showCharacterCount$ ?? defaultSettings.showCharacterCount$);

@@ -8,6 +8,8 @@
 		milestoneLines$,
 		preserveWhitespace$,
 		reverseLineOrder$,
+		linePadding$,
+		showLinePoints$,
 	} from '../stores/stores';
 	import type { LineItem, LineItemEditEvent } from '../types';
 	import { dummyFn, newLineCharacter, updateScroll } from '../util';
@@ -88,15 +90,18 @@
 <p
 	data-line-id={line.id}
 	class="my-2 cursor-pointer border-2"
-	class:py-4={!isVerticalDisplay}
 	class:px-2={!isVerticalDisplay}
 	class:py-2={isVerticalDisplay}
-	class:px-4={isVerticalDisplay}
+	style:padding-top={!isVerticalDisplay ? `${$linePadding$}rem` : undefined}
+	style:padding-bottom={!isVerticalDisplay ? `${$linePadding$}rem` : undefined}
+	style:padding-left={isVerticalDisplay ? `${$linePadding$}rem` : undefined}
+	style:padding-right={isVerticalDisplay ? `${$linePadding$}rem` : undefined}
 	class:border-transparent={!isSelected}
 	class:cursor-text={isEditable}
 	class:border-primary={isSelected}
 	class:border-accent-focus={isEditable}
 	class:whitespace-pre-wrap={$preserveWhitespace$}
+	class:show-bullet={$showLinePoints$}
 	contenteditable={isEditable}
 	on:dblclick={handleDblClick}
 	on:keyup={dummyFn}
@@ -111,10 +116,12 @@
 		class="flex justify-center text-xs my-2 py-2 border-primary border-dashed milestone"
 		class:border-x-2={$displayVertical$}
 		class:border-y-2={!$displayVertical$}
-		class:py-4={!isVerticalDisplay}
 		class:px-2={!isVerticalDisplay}
 		class:py-2={isVerticalDisplay}
-		class:px-4={isVerticalDisplay}
+		style:padding-top={!isVerticalDisplay ? `${$linePadding$}rem` : undefined}
+		style:padding-bottom={!isVerticalDisplay ? `${$linePadding$}rem` : undefined}
+		style:padding-left={isVerticalDisplay ? `${$linePadding$}rem` : undefined}
+		style:padding-right={isVerticalDisplay ? `${$linePadding$}rem` : undefined}
 	>
 		<div class="flex items-center">
 			<Icon class={$displayVertical$ ? '' : 'mr-2'} path={mdiTrophy} />
@@ -127,5 +134,13 @@
 <style>
 	p:focus-visible {
 		outline: none;
+	}
+	.show-bullet::before {
+		content: "• ";
+		opacity: 0.1;
+		transition: opacity 0.3s;
+	}
+	.show-bullet:hover::before {
+		opacity: 1;
 	}
 </style>

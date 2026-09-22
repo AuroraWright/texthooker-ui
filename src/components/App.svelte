@@ -37,6 +37,7 @@
 		lastPipHeight$,
 		lastPipWidth$,
 		lineData$,
+		linePadding$,
 		maxLines$,
 		maxPipLines$,
 		mergeEqualLineStarts$,
@@ -52,6 +53,7 @@
 		reverseLineOrder$,
 		secondaryWebsocketUrl$,
 		showConnectionIcon$,
+		showLinePoints$,
 		showSpinner$,
 		theme$,
 		websocketUrl$,
@@ -267,6 +269,8 @@
 		$customCSS$;
 		$preserveWhitespace$;
 		$removeAllWhitespace$;
+		$linePadding$;
+		$showLinePoints$;
 
 		lineSizes.clear();
 		virtualListRef?.clearCacheAndAverage();
@@ -954,7 +958,7 @@
 	bind:this={lineContainer}
 >
 	<div aria-hidden="true" class="absolute invisible pointer-events-none opacity-0 -z-50 flex" class:flex-col={!$displayVertical$} bind:offsetHeight={measuredHeight} bind:offsetWidth={measuredWidth}>
-		<p class="my-2 border-2 border-transparent" class:py-4={!$displayVertical$} class:px-2={!$displayVertical$} class:py-2={$displayVertical$} class:px-4={$displayVertical$}>
+		<p class="my-2 border-2 border-transparent" class:px-2={!$displayVertical$} class:py-2={$displayVertical$} class:show-bullet={$showLinePoints$} style:padding-top={!$displayVertical$ ? `${$linePadding$}rem` : undefined} style:padding-bottom={!$displayVertical$ ? `${$linePadding$}rem` : undefined} style:padding-left={$displayVertical$ ? `${$linePadding$}rem` : undefined} style:padding-right={$displayVertical$ ? `${$linePadding$}rem` : undefined}>
 			トランスジェンダーの権利
 		</p>
 	</div>
@@ -1012,11 +1016,13 @@
 {/if}
 <div
 	id="pip-container"
-	class="flex-1 flex flex-col break-all px-4 w-full h-full overflow-auto"
+	class="flex-1 flex flex-col break-all w-full h-full overflow-auto"
 	class:flex-col-reverse={$reverseLineOrder$}
 	class:hidden={!pipWindow}
 	style:font-size={`${$fontSize$}px`}
 	style:font-family={$onlineFont$ !== OnlineFont.OFF ? $onlineFont$ : undefined}
+	style:padding-top={`${$linePadding$}rem`}
+	style:padding-bottom={`${$linePadding$}rem`}
 	bind:this={pipContainer}
 >
 	{#if pipWindow}
