@@ -252,10 +252,10 @@
 		// listWidth causes reflow in horizontal mode, listHeight in vertical mode
 		const currentReflowDimension = $displayVertical$ ? listHeight : listWidth;
 		
-		if (virtualListRef && currentReflowDimension !== lastReflowDimension) {
+		if (currentReflowDimension !== lastReflowDimension) {
 			if (lastReflowDimension !== 0) {
 				lineSizes.clear();
-				virtualListRef.clearCacheAndAverage();
+				virtualListRef?.clearCacheAndAverage();
 			}
 			lastReflowDimension = currentReflowDimension;
 		}
@@ -272,10 +272,8 @@
 	    $removeAllWhitespace$;
 	    
 	    // When they change, explicitly wipe both the local lineSizes and the VirtualList's trained average
-	    if (virtualListRef) {
-	        lineSizes.clear();
-	        virtualListRef.clearCacheAndAverage();
-	    }
+	    lineSizes.clear();
+	    virtualListRef?.clearCacheAndAverage();
 	}
 
 	let prevLowerQuery = '';
