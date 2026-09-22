@@ -271,7 +271,6 @@
 		$removeAllWhitespace$;
 		$characterMilestone$;
 		$linePadding$;
-		$showLinePoints$;
 
 		lineSizes.clear();
 		virtualListRef?.clearCacheAndAverage();
@@ -1003,8 +1002,23 @@
 	style:writing-mode={$displayVertical$ ? 'vertical-rl' : 'horizontal-tb'}
 	bind:this={lineContainer}
 >
-	<div aria-hidden="true" class="absolute invisible pointer-events-none opacity-0 -z-50 flex" class:flex-col={!$displayVertical$} bind:offsetHeight={measuredHeight} bind:offsetWidth={measuredWidth}>
-		<p class="my-2 border-2 border-transparent" class:px-2={!$displayVertical$} class:py-2={$displayVertical$} class:show-bullet={$showLinePoints$} style:padding-top={!$displayVertical$ ? `${$linePadding$}rem` : undefined} style:padding-bottom={!$displayVertical$ ? `${$linePadding$}rem` : undefined} style:padding-left={$displayVertical$ ? `${$linePadding$}rem` : undefined} style:padding-right={$displayVertical$ ? `${$linePadding$}rem` : undefined}>
+	<div
+		aria-hidden="true"
+		class="absolute invisible pointer-events-none opacity-0 -z-50 flex"
+		class:flex-col={!$displayVertical$}
+		bind:offsetHeight={measuredHeight}
+		bind:offsetWidth={measuredWidth}
+	>
+		<p
+			class="my-2 border-2 border-transparent"
+			class:px-2={!$displayVertical$}
+			class:py-2={$displayVertical$}
+			class:show-bullet={$showLinePoints$}
+			style:padding-top={!$displayVertical$ ? `${$linePadding$}rem` : undefined}
+			style:padding-bottom={!$displayVertical$ ? `${$linePadding$}rem` : undefined}
+			style:padding-left={$displayVertical$ ? `${$linePadding$}rem` : undefined}
+			style:padding-right={$displayVertical$ ? `${$linePadding$}rem` : undefined}
+		>
 			トランスジェンダーの権利
 		</p>
 	</div>
