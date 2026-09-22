@@ -23,6 +23,7 @@
 		autoStartTimerDuringPause$,
 		autoStartTimerDuringPausePaste$,
 		blockCopyOnPage$,
+		characterMilestone$,
 		customCSS$,
 		dialogOpen$,
 		displayVertical$,
@@ -41,6 +42,7 @@
 		maxLines$,
 		maxPipLines$,
 		mergeEqualLineStarts$,
+		milestoneLines$,
 		newLine$,
 		notesOpen$,
 		onlineFont$,
@@ -158,6 +160,9 @@
 				markLineAsNew(newId);
 				currentLines.push({ id: newId, text });
 				$lineData$ = applyEqualLineStartMerge(currentLines);
+				if ($reverseLineOrder$) {
+					virtualListRef?.shiftIndices(1);
+				}
 				tick().then(() => executeUpdateScroll());
 
 				if (
@@ -214,6 +219,12 @@
 		reduceToEmptyString(),
 	);
 
+	const virtualItemSize = (index: number) => {
+	    const actualIndex = mapIndex(index);
+	    const line = $lineData$[actualIndex];
+	    return line ? lineSizes.get(line.id) : undefined;
+	};
+
 	$: iconSize = isSmFactor ? '1.5rem' : '1.25rem';
 
 	$: $enabledReplacements$ = $replacements$.filter((replacment) => replacment.enabled);
@@ -237,18 +248,6 @@
 		tick().then(() => executeUpdateScroll(true));
 	}
 
-	const virtualItemSize = (index: number) => {
-		const actualIndex = $reverseLineOrder$ ? $lineData$.length - 1 - index : index;
-		const line = $lineData$[actualIndex];
-		return line ? lineSizes.get(line.id) : undefined;
-	};
-
-	$: if ($lineData$.length === 0) {
-		lineSizes.clear();
-		newlyAddedLineIds.clear();
-		newlyAddedLineIds = newlyAddedLineIds;
-	}
-
 	$: {
 		const currentReflowDimension = $displayVertical$ ? listHeight : listWidth;
 		
@@ -267,13 +266,55 @@
 		$fontSize$;
 		$onlineFont$;
 		$customCSS$;
+		$theme$;
 		$preserveWhitespace$;
 		$removeAllWhitespace$;
+		$characterMilestone$;
 		$linePadding$;
 		$showLinePoints$;
 
 		lineSizes.clear();
 		virtualListRef?.clearCacheAndAverage();
+	}
+
+	let prevMilestoneIds = new Set<string>();
+	$: {
+		const currentMilestoneMap = $milestoneLines$;
+		const currentIds = new Set(currentMilestoneMap ? currentMilestoneMap.keys() : []);
+		const changedLineIds: string[] = [];
+
+		for (const id of prevMilestoneIds) {
+			if (!currentIds.has(id)) {
+				changedLineIds.push(id);
+			}
+		}
+		for (const id of currentIds) {
+			if (!prevMilestoneIds.has(id)) {
+				changedLineIds.push(id);
+			}
+		}
+		prevMilestoneIds = currentIds;
+
+		if (changedLineIds.length > 0) {
+			let hasCachedChanges = false;
+			const invalidVirtualIndices: number[] = [];
+
+			for (const id of changedLineIds) {
+				if (lineSizes.has(id)) {
+					lineSizes.delete(id);
+					hasCachedChanges = true;
+					const lineIdx = $lineData$.findIndex((l) => l.id === id);
+					if (lineIdx !== -1) {
+						const vIdx = mapIndex(lineIdx);
+						invalidVirtualIndices.push(vIdx);
+					}
+				}
+			}
+
+			if (hasCachedChanges && virtualListRef) {
+				virtualListRef.invalidateItemSizes(invalidVirtualIndices);
+			}
+		}
 	}
 
 	let prevLowerQuery = '';
@@ -296,7 +337,7 @@
 			searchJumpIndex = matchIndices.length > 0 ? matchIndices[currentMatchStep] : undefined;
 
 			if (searchJumpIndex !== undefined && virtualListRef) {
-				const virtualTarget = $reverseLineOrder$ ? $lineData$.length - 1 - searchJumpIndex : searchJumpIndex;
+				const virtualTarget = mapIndex(searchJumpIndex);
 				virtualListRef.scrollListToIndex(virtualTarget, 'auto', 'center');
 			}
 		} else {
@@ -338,13 +379,17 @@
 		executeUpdateScroll(true);
 	}
 
+	function mapIndex(index: number): number {
+		return $reverseLineOrder$ ? $lineData$.length - 1 - index : index;
+	}
+
 	function nextMatch() {
 		if (matchIndices.length === 0) return;
 		currentMatchStep = (currentMatchStep + 1) % matchIndices.length;
 		const targetIndex = matchIndices[currentMatchStep];
 		searchJumpIndex = targetIndex;
 
-		const virtualTarget = $reverseLineOrder$ ? $lineData$.length - 1 - targetIndex : targetIndex;
+		const virtualTarget = mapIndex(targetIndex);
 		virtualListRef.scrollListToIndex(virtualTarget, 'auto', 'center');
 	}
 
@@ -354,7 +399,7 @@
 		const targetIndex = matchIndices[currentMatchStep];
 		searchJumpIndex = targetIndex;
 
-		const virtualTarget = $reverseLineOrder$ ? $lineData$.length - 1 - targetIndex : targetIndex;
+		const virtualTarget = mapIndex(targetIndex);
 		virtualListRef.scrollListToIndex(virtualTarget, 'auto', 'center');
 	}
 
@@ -390,9 +435,9 @@
 						pendingInvalidations.clear();
 						recomputePending = false;
 
-						const targetIndex = $reverseLineOrder$ ? 0 : $lineData$.length - 1;
+						const targetIndex = mapIndex($lineData$.length - 1);
 						if (virtual === targetIndex && !showSearch) {
-							virtualListRef.scrollListToIndex(actual, listScrollBehavior, $reverseLineOrder$ ? 'start' : 'end');
+							virtualListRef.scrollListToIndex(virtual, listScrollBehavior, $reverseLineOrder$ ? 'start' : 'end');
 						}
 					});
 				}
@@ -639,14 +684,14 @@
 	function executeUpdateScroll(forceInstant: boolean = false) {
 		listScrollBehavior = ($enableLineAnimation$ && forceInstant !== true) ? 'smooth' : 'auto';
 		if (virtualListRef && $lineData$.length > 0 && !showSearch) {
-			const targetIndex = $reverseLineOrder$ ? 0 : $lineData$.length - 1;
+			const targetIndex = mapIndex($lineData$.length - 1);
 			const alignment = $reverseLineOrder$ ? 'start' : 'end';
 			virtualListRef.scrollListToIndex(targetIndex, listScrollBehavior, alignment);
 
 			if (forceInstant) {
 				setTimeout(() => {
 					if (virtualListRef && $lineData$.length > 0 && !showSearch) {
-						const updatedTargetIndex = $reverseLineOrder$ ? 0 : $lineData$.length - 1;
+						const updatedTargetIndex = mapIndex($lineData$.length - 1);
 						virtualListRef.scrollListToIndex(updatedTargetIndex, listScrollBehavior, alignment);
 					}
 				}, 100);
@@ -939,7 +984,7 @@
 		on:layoutChange={() => executeUpdateScroll(true)}
 		on:maxLinesChange={() => ($lineData$ = applyMaxLinesAndGetRemainingLineData())}
 		on:linesRemoved={(event) => {event.detail.forEach(id => lineSizes.delete(id));}}
-		on:dataImported={() => {
+		on:dataResetOrImported={() => {
 			lineSizes.clear();
 			virtualListRef?.clearCacheAndAverage();
 			newlyAddedLineIds.clear();
@@ -977,7 +1022,7 @@
 			padding={32}
 		>
 			<div slot="item" let:index let:style {style} class="absolute" class:px-4={!$displayVertical$} class:py-4={$displayVertical$} class:w-full={!$displayVertical$} class:h-full={$displayVertical$}>
-				{@const actualIndex = $reverseLineOrder$ ? $lineData$.length - 1 - index : index}
+				{@const actualIndex = mapIndex(index)}
 				{#if $lineData$[actualIndex]}
 				<div use:measureSize={{ lineId: $lineData$[actualIndex].id, actual: actualIndex, virtual: index }} class="flex flex-col" class:w-full={!$displayVertical$} class:h-full={$displayVertical$}>
 					<div class:bg-primary={actualIndex === searchJumpIndex}

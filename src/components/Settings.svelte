@@ -127,9 +127,11 @@
 			window.localStorage.removeItem('bannou-texthooker-actionHistory');
 			await removeIDBItem('bannou-texthooker-actionHistory');
 		}
+
+		dispatch('dataResetOrImported');
 	}
 
-	const dispatch = createEventDispatcher<{ layoutChange: void; maxLinesChange: void; linesRemoved: string[]; dataImported: void; }>();
+	const dispatch = createEventDispatcher<{ layoutChange: void; maxLinesChange: void; linesRemoved: string[]; dataResetOrImported: void; }>();
 	const onlineFonts = [
 		OnlineFont.OFF,
 		OnlineFont.NOTO,
@@ -355,7 +357,7 @@
 		dataFileInput.value = null;
 		tick().then(() => {
 			dispatch('layoutChange');
-			dispatch('dataImported');
+			dispatch('dataResetOrImported');
 		});
 	}
 

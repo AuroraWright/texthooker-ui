@@ -22,6 +22,7 @@
 
 	let sizeCache: number[] = [];
 	let offsetCache: number[] = [0];
+	let _prevItemCount: number = 0;
 
 	export function invalidateItemSizes(indices: number[]) {
 		if (!indices || indices.length === 0) return;
@@ -45,6 +46,17 @@
 
 		offsetCache.length = Math.min(offsetCache.length, lowestChangedIndex + 1);
 		updateState();
+	}
+
+	export function shiftIndices(shiftAmount: number) {
+		if (!shiftAmount || shiftAmount <= 0) return;
+
+		const newEmptySlots = new Array(shiftAmount).fill(undefined);
+		sizeCache = [...newEmptySlots, ...sizeCache];
+		offsetCache = [0];
+		_prevItemCount += shiftAmount;
+
+		scheduleUpdateState();
 	}
 
 	export function clearCacheAndAverage() {
@@ -195,10 +207,14 @@
 
 	$: handlePropsChange(itemCount);
 	function handlePropsChange(newCount: number) {
-		if (newCount < sizeCache.length) {
+		const hasDecreased = newCount < _prevItemCount;
+		_prevItemCount = newCount;
+
+		if (hasDecreased) {
 			clearCacheAndAverage();
 			return;
 		}
+
 		scheduleUpdateState();
 	}
 
