@@ -832,6 +832,7 @@
 		} finally {
 			$lineData$ = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData());
 			$showSpinner$ = false;
+			executeUpdateScroll(true);
 		}
 	}
 

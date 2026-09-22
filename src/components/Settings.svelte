@@ -442,6 +442,7 @@
 		}
 
 		target.value = `${$characterMilestone$}`;
+		dispatch('layoutChange');
 	}
 
 	function handlePreventLastDuplicateBlur(event) {
@@ -500,6 +501,7 @@
 
 		if (removedIds.size > 0) {
 			dispatch('linesRemoved', Array.from(removedIds));
+			dispatch('layoutChange');
 		}
 	}
 
@@ -553,6 +555,7 @@
 			$maxLines$ = 0;
 		} else {
 			dispatch('maxLinesChange');
+			dispatch('layoutChange');
 		}
 	}
 
@@ -586,6 +589,7 @@
 
 			if (removedLineIds.size > 0) {
 				dispatch('linesRemoved', Array.from(removedLineIds));
+				dispatch('layoutChange');
 			}
 		}
 	}
@@ -605,12 +609,14 @@
 					oldLine.text = oldLine.text.replace(/\s/g, '').trim();
 					return oldLine;
 				});
+				dispatch('layoutChange');
 			}
 		}
 	}
 
 	function handleCustomCSSBlur(event: FocusEvent) {
 		$customCSS$ = (event.target as HTMLTextAreaElement).value;
+		dispatch('layoutChange');
 	}
 
 	async function handleImport(fileInput: HTMLInputElement, message: string) {
@@ -808,6 +814,7 @@
 				if (!$fontSize$ || $fontSize$ < 1) {
 					$fontSize$ = 24;
 				}
+				dispatch('layoutChange');
 			}}
 		/>
 		<span class="label-text col-span-2">Line Padding</span>
@@ -820,6 +827,7 @@
 				if ($linePadding$ === null || $linePadding$ < 0) {
 					$linePadding$ = 1;
 				}
+				dispatch('layoutChange');
 		}} />
 		<span class="label-text col-span-2">Character Milestone</span>
 		<input
@@ -830,7 +838,11 @@
 			on:blur={handleCharacterMilestoneBlur}
 		/>
 		<span class="label-text mr-4 col-span-2">Online Font</span>
-		<select class="select col-span-2" bind:value={$onlineFont$}>
+		<select
+			class="select col-span-2"
+			bind:value={$onlineFont$}
+			on:change={() => dispatch('layoutChange')}
+		>
 			{#each onlineFonts as font (font)}
 				<option value={font}>
 					{font}
@@ -959,7 +971,12 @@
 			on:change={() => dispatch('layoutChange')}
 		/>
 		<span class="label-text">Preserve Whitespace</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$preserveWhitespace$} />
+		<input
+			type="checkbox"
+			class="checkbox checkbox-primary ml-2"
+			bind:checked={$preserveWhitespace$}
+			on:change={() => dispatch('layoutChange')}
+		/>
 		<span class="label-text">Remove all Whitespace</span>
 		<input
 			type="checkbox"
@@ -968,7 +985,12 @@
 			on:change={handleRemoveAllWhiteSpaceChange}
 		/>
 		<span class="label-text">Show Bullet Points</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$showLinePoints$} />
+		<input
+			type="checkbox"
+			class="checkbox checkbox-primary ml-2"
+			bind:checked={$showLinePoints$}
+			on:change={() => dispatch('layoutChange')}
+		/>
 		<span class="label-text">Show Timer</span>
 		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$showTimer$} />
 		<span class="label-text">Show Speed</span>
