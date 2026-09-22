@@ -391,7 +391,7 @@
 	                    recomputePending = false;
 
 						const targetIndex = $reverseLineOrder$ ? 0 : $lineData$.length - 1;
-                        if (actual === targetIndex && !showSearch) {
+                        if (virtual === targetIndex && !showSearch) {
                             virtualListRef.scrollListToIndex(actual, listScrollBehavior, $reverseLineOrder$ ? 'start' : 'end');
                         }
 	                });
@@ -986,6 +986,7 @@
 						 class:bg-opacity-20={actualIndex === searchJumpIndex}
 						 class="transition-colors duration-200 rounded"
 						 class:w-full={!$displayVertical$} class:h-full={$displayVertical$}>
+						 {#key $lineData$[actualIndex].id}
 						<Line
 							line={$lineData$[actualIndex]}
 							isNew={newlyAddedLineIds.has($lineData$[actualIndex].id)}
@@ -998,6 +999,7 @@
 							}}
 							on:edit={handleLineEdit}
 						/>
+						{/key}
 					</div>
 				</div>
 				{/if}
