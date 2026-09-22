@@ -107,7 +107,7 @@
 	let listScrollBehavior: ScrollBehavior = 'auto';
 	let newlyAddedLineIds = new Set<string>();
 	let measuredHeight = 0;
-    let measuredWidth = 0;
+	let measuredWidth = 0;
 
 	const wakeLockAvailable = 'wakeLock' in navigator;
 	const cjkCharacters = /[\p{scx=Hira}\p{scx=Kana}\p{scx=Han}]/imu;
@@ -221,8 +221,8 @@
 	$: pipLines = pipAvailable && $lineData$ ? $lineData$.slice(-$maxPipLines$) : [];
 
 	$: estimatedItemSize = $displayVertical$ 
-        ? (measuredWidth || ($fontSize$ * 1.5 + 36)) 
-        : (measuredHeight || ($fontSize$ * 1.5 + 52));
+		? (measuredWidth || ($fontSize$ * 1.5 + 36)) 
+		: (measuredHeight || ($fontSize$ * 1.5 + 52));
 
 	$: if (pipWindow) {
 		pipWindow.document.body.dataset.theme = $theme$;
@@ -241,7 +241,6 @@
 		return line ? lineSizes.get(line.id) : undefined;
 	};
 
-	// Clean up orphaned Map entries if the user completely resets the text data
 	$: if ($lineData$.length === 0) {
 		lineSizes.clear();
 		newlyAddedLineIds.clear();
@@ -249,7 +248,6 @@
 	}
 
 	$: {
-		// listWidth causes reflow in horizontal mode, listHeight in vertical mode
 		const currentReflowDimension = $displayVertical$ ? listHeight : listWidth;
 		
 		if (currentReflowDimension !== lastReflowDimension) {
@@ -262,49 +260,47 @@
 	}
 
 	$: {
-	    // Stores that reflow or physically change the size of the text
-	    $displayVertical$;
-	    $reverseLineOrder$;
-	    $fontSize$;
-	    $onlineFont$;
-	    $customCSS$;
-	    $preserveWhitespace$;
-	    $removeAllWhitespace$;
-	    
-	    // When they change, explicitly wipe both the local lineSizes and the VirtualList's trained average
-	    lineSizes.clear();
-	    virtualListRef?.clearCacheAndAverage();
+		$displayVertical$;
+		$reverseLineOrder$;
+		$fontSize$;
+		$onlineFont$;
+		$customCSS$;
+		$preserveWhitespace$;
+		$removeAllWhitespace$;
+
+		lineSizes.clear();
+		virtualListRef?.clearCacheAndAverage();
 	}
 
 	let prevLowerQuery = '';
 	$: lowerQuery = searchQuery.trim().toLowerCase();
 	$: {
-	    if (lowerQuery && $lineData$) {
-	        if (lowerQuery !== prevLowerQuery) {
-	            currentMatchStep = 0;
-	            prevLowerQuery = lowerQuery;
-	        }
+		if (lowerQuery && $lineData$) {
+			if (lowerQuery !== prevLowerQuery) {
+				currentMatchStep = 0;
+				prevLowerQuery = lowerQuery;
+			}
 
-	        matchIndices = $lineData$
-	            .map((l, i) => l.text.toLowerCase().includes(lowerQuery) ? i : -1)
-	            .filter(i => i !== -1);
+			matchIndices = $lineData$
+				.map((l, i) => l.text.toLowerCase().includes(lowerQuery) ? i : -1)
+				.filter(i => i !== -1);
 
-	        if (currentMatchStep >= matchIndices.length) {
-	            currentMatchStep = Math.max(0, matchIndices.length - 1);
-	        }
+			if (currentMatchStep >= matchIndices.length) {
+				currentMatchStep = Math.max(0, matchIndices.length - 1);
+			}
 
-	        searchJumpIndex = matchIndices.length > 0 ? matchIndices[currentMatchStep] : undefined;
+			searchJumpIndex = matchIndices.length > 0 ? matchIndices[currentMatchStep] : undefined;
 
-	        if (searchJumpIndex !== undefined && virtualListRef) {
-	            const virtualTarget = $reverseLineOrder$ ? $lineData$.length - 1 - searchJumpIndex : searchJumpIndex;
-	            virtualListRef.scrollListToIndex(virtualTarget, 'auto', 'center');
-	        }
-	    } else {
-	        matchIndices = [];
-	        currentMatchStep = 0;
-	        searchJumpIndex = undefined;
-	        prevLowerQuery = lowerQuery;
-	    }
+			if (searchJumpIndex !== undefined && virtualListRef) {
+				const virtualTarget = $reverseLineOrder$ ? $lineData$.length - 1 - searchJumpIndex : searchJumpIndex;
+				virtualListRef.scrollListToIndex(virtualTarget, 'auto', 'center');
+			}
+		} else {
+			matchIndices = [];
+			currentMatchStep = 0;
+			searchJumpIndex = undefined;
+			prevLowerQuery = lowerQuery;
+		}
 	}
 
 	onMount(() => {
@@ -372,50 +368,50 @@
 	}
 
 	function measureSize(node: HTMLElement, params: { lineId: string; actual: number; virtual: number }) {
-	    let { lineId, actual, virtual } = params;
-	    const ro = new ResizeObserver(() => {
-	        const size = $displayVertical$ ? node.offsetWidth : node.offsetHeight;
+		let { lineId, actual, virtual } = params;
+		const ro = new ResizeObserver(() => {
+			const size = $displayVertical$ ? node.offsetWidth : node.offsetHeight;
 
-	        const currentSize = lineSizes.get(lineId);
-	        if (!currentSize || Math.abs(currentSize - size) > 1) {
-	            lineSizes.set(lineId, size);
-	            pendingInvalidations.add(virtual);
+			const currentSize = lineSizes.get(lineId);
+			if (!currentSize || Math.abs(currentSize - size) > 1) {
+				lineSizes.set(lineId, size);
+				pendingInvalidations.add(virtual);
 
-	            if (!recomputePending) {
-	                recomputePending = true;
-	                tick().then(() => {
-	                    if (virtualListRef && pendingInvalidations.size > 0) {
-	                        virtualListRef.invalidateItemSizes(Array.from(pendingInvalidations));
-	                    }
-	                    pendingInvalidations.clear();
-	                    recomputePending = false;
+				if (!recomputePending) {
+					recomputePending = true;
+					tick().then(() => {
+						if (virtualListRef && pendingInvalidations.size > 0) {
+							virtualListRef.invalidateItemSizes(Array.from(pendingInvalidations));
+						}
+						pendingInvalidations.clear();
+						recomputePending = false;
 
 						const targetIndex = $reverseLineOrder$ ? 0 : $lineData$.length - 1;
-                        if (virtual === targetIndex && !showSearch) {
-                            virtualListRef.scrollListToIndex(actual, listScrollBehavior, $reverseLineOrder$ ? 'start' : 'end');
-                        }
-	                });
-	            }
-	        }
-	    });
-	    ro.observe(node);
+						if (virtual === targetIndex && !showSearch) {
+							virtualListRef.scrollListToIndex(actual, listScrollBehavior, $reverseLineOrder$ ? 'start' : 'end');
+						}
+					});
+				}
+			}
+		});
+		ro.observe(node);
 
-	    return {
-	        update(newParams: { lineId: string; actual: number; virtual: number }) {
-	            lineId = newParams.lineId;
-	            actual = newParams.actual;
-	            virtual = newParams.virtual;
-	        },
-	        destroy() {
-	            ro.disconnect();
-	        }
-	    }
+		return {
+			update(newParams: { lineId: string; actual: number; virtual: number }) {
+				lineId = newParams.lineId;
+				actual = newParams.actual;
+				virtual = newParams.virtual;
+			},
+			destroy() {
+				ro.disconnect();
+			}
+		}
 	}
 
 	function handleKeyPress(event: KeyboardEvent) {
 		const target = event.target as HTMLElement;
 		if ($notesOpen$ || $dialogOpen$ || settingsOpen || lineInEdit || showSearch || target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable) {
-		    return;
+			return;
 		}
 
 		const key = (event.key || '')?.toLowerCase();
@@ -435,9 +431,9 @@
 					const startIndex = $lineData$.findIndex(l => l.id === startId);
 					const endIndex = $lineData$.findIndex(l => l.id === endId);
 					if (startIndex !== -1 && endIndex !== -1) {
-					    const [from, to] = [Math.min(startIndex, endIndex), Math.max(startIndex, endIndex)];
-					    const idsInRange = $lineData$.slice(from, to + 1).map(l => l.id);
-					    selectedLineIds = Array.from(new Set([...selectedLineIds, ...idsInRange]));
+						const [from, to] = [Math.min(startIndex, endIndex), Math.max(startIndex, endIndex)];
+						const idsInRange = $lineData$.slice(from, to + 1).map(l => l.id);
+						selectedLineIds = Array.from(new Set([...selectedLineIds, ...idsInRange]));
 					}
 				}
 			}
@@ -637,24 +633,24 @@
 	}
 
 	function executeUpdateScroll(forceInstant: boolean = false) {
-	    listScrollBehavior = ($enableLineAnimation$ && forceInstant !== true) ? 'smooth' : 'auto';
-	    if (virtualListRef && $lineData$.length > 0 && !showSearch) {
-	        const targetIndex = $reverseLineOrder$ ? 0 : $lineData$.length - 1;
-	        const alignment = $reverseLineOrder$ ? 'start' : 'end';
-	        virtualListRef.scrollListToIndex(targetIndex, listScrollBehavior, alignment);
+		listScrollBehavior = ($enableLineAnimation$ && forceInstant !== true) ? 'smooth' : 'auto';
+		if (virtualListRef && $lineData$.length > 0 && !showSearch) {
+			const targetIndex = $reverseLineOrder$ ? 0 : $lineData$.length - 1;
+			const alignment = $reverseLineOrder$ ? 'start' : 'end';
+			virtualListRef.scrollListToIndex(targetIndex, listScrollBehavior, alignment);
 
-	        if (forceInstant) {
-	            setTimeout(() => {
-	                if (virtualListRef && $lineData$.length > 0 && !showSearch) {
-	                    const updatedTargetIndex = $reverseLineOrder$ ? 0 : $lineData$.length - 1;
-	                    virtualListRef.scrollListToIndex(updatedTargetIndex, listScrollBehavior, alignment);
-	                }
-	            }, 100);
-	        }
-	    }
-	    if (pipWindow) {
-	        updateScroll(pipWindow, pipContainer, $reverseLineOrder$, false, listScrollBehavior);
-	    }
+			if (forceInstant) {
+				setTimeout(() => {
+					if (virtualListRef && $lineData$.length > 0 && !showSearch) {
+						const updatedTargetIndex = $reverseLineOrder$ ? 0 : $lineData$.length - 1;
+						virtualListRef.scrollListToIndex(updatedTargetIndex, listScrollBehavior, alignment);
+					}
+				}, 100);
+			}
+		}
+		if (pipWindow) {
+			updateScroll(pipWindow, pipContainer, $reverseLineOrder$, false, listScrollBehavior);
+		}
 	}
 
 	function handleMissedLine() {
@@ -703,25 +699,25 @@
 	}
 
 	function handleLineEdit(event) {
-	    const { inEdit, data } = event.detail as LineItemEditEvent;
-	    if (data && data.originalText !== data.newText) {
-	        const lineIndex = $lineData$.findIndex((l) => l.id === data.line.id);
-	        if (lineIndex !== -1) {
-	            $uniqueLines$.delete(data.originalText);
-	            const text = transformLine(data.newText);
+		const { inEdit, data } = event.detail as LineItemEditEvent;
+		if (data && data.originalText !== data.newText) {
+			const lineIndex = $lineData$.findIndex((l) => l.id === data.line.id);
+			if (lineIndex !== -1) {
+				$uniqueLines$.delete(data.originalText);
+				const text = transformLine(data.newText);
 
-	            if (text) {
-	                $lineData$[lineIndex] = { id: data.line.id, text };
-	                const currentHistory = $actionHistory$;
-	                currentHistory.push([{ ...data.line, index: lineIndex }]);
-	                $actionHistory$ = currentHistory;
-	                $uniqueLines$.add(text);
-	            } else {
-	                $uniqueLines$.add(data.originalText);
-	            }
-	        }
-	    }
-	    lineInEdit = inEdit;
+				if (text) {
+					$lineData$[lineIndex] = { id: data.line.id, text };
+					const currentHistory = $actionHistory$;
+					currentHistory.push([{ ...data.line, index: lineIndex }]);
+					$actionHistory$ = currentHistory;
+					$uniqueLines$.add(text);
+				} else {
+					$uniqueLines$.add(data.originalText);
+				}
+			}
+		}
+		lineInEdit = inEdit;
 	}
 
 	function applyMaxLinesAndGetRemainingLineData(diffMod = 0) {
@@ -744,50 +740,50 @@
 	}
 
 	async function updateLineData(executeUpdate: boolean) {
-	    if (!executeUpdate) return;
-	    $showSpinner$ = true;
-	    await tick();
-	    try {
-	        let hasChanges = false;
-	        const linesToRemove = new Set<string>();
-	        const CHUNK_SIZE = 100;
+		if (!executeUpdate) return;
+		$showSpinner$ = true;
+		await tick();
+		try {
+			let hasChanges = false;
+			const linesToRemove = new Set<string>();
+			const CHUNK_SIZE = 100;
 
-	        for (let index = 0; index < $lineData$.length; index++) {
-	            const line = $lineData$[index];
-	            const newText = transformLine(line.text);
+			for (let index = 0; index < $lineData$.length; index++) {
+				const line = $lineData$[index];
+				const newText = transformLine(line.text);
 
-	            if (!newText) {
-	                linesToRemove.add(line.id);
-	                $uniqueLines$.delete(line.text);
-	                hasChanges = true;
-	            } else if (newText !== line.text) {
-	                $uniqueLines$.delete(line.text);
-	                $uniqueLines$.add(newText);
-	                $lineData$[index] = { ...line, text: newText };
-	                hasChanges = true;
-	            }
+				if (!newText) {
+					linesToRemove.add(line.id);
+					$uniqueLines$.delete(line.text);
+					hasChanges = true;
+				} else if (newText !== line.text) {
+					$uniqueLines$.delete(line.text);
+					$uniqueLines$.add(newText);
+					$lineData$[index] = { ...line, text: newText };
+					hasChanges = true;
+				}
 
-	            if (index > 0 && index % CHUNK_SIZE === 0) {
-	                await new Promise(resolve => setTimeout(resolve, 0));
-	            }
-	        }
+				if (index > 0 && index % CHUNK_SIZE === 0) {
+					await new Promise(resolve => setTimeout(resolve, 0));
+				}
+			}
 
-	        if (hasChanges) {
-	            if (linesToRemove.size > 0) {
-	                $lineData$ = $lineData$.filter(line => !linesToRemove.has(line.id));
-	                selectedLineIds = selectedLineIds.filter(id => !linesToRemove.has(id));
-	            }
+			if (hasChanges) {
+				if (linesToRemove.size > 0) {
+					$lineData$ = $lineData$.filter(line => !linesToRemove.has(line.id));
+					selectedLineIds = selectedLineIds.filter(id => !linesToRemove.has(id));
+				}
 
-	            lineSizes.clear();
-	            virtualListRef?.clearCacheAndAverage();
-	            $openDialog$ = { message: `Operation executed`, showCancel: false };
-	        }
-	    } catch ({ message }) {
-	        $openDialog$ = { type: 'error', message: `An Error occured: ${message}`, showCancel: false };
-	    } finally {
-	        $lineData$ = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData());
-	        $showSpinner$ = false;
-	    }
+				lineSizes.clear();
+				virtualListRef?.clearCacheAndAverage();
+				$openDialog$ = { message: `Operation executed`, showCancel: false };
+			}
+		} catch ({ message }) {
+			$openDialog$ = { type: 'error', message: `An Error occured: ${message}`, showCancel: false };
+		} finally {
+			$lineData$ = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData());
+			$showSpinner$ = false;
+		}
 	}
 
 	function applyEqualLineStartMerge(currentLineData: LineItem[]) {
@@ -957,14 +953,12 @@
 	style:writing-mode={$displayVertical$ ? 'vertical-rl' : 'horizontal-tb'}
 	bind:this={lineContainer}
 >
-	<!-- Hidden dummy element for precise size estimation against custom CSS -->
-    <div aria-hidden="true" class="absolute invisible pointer-events-none opacity-0 -z-50 flex" class:flex-col={!$displayVertical$} bind:offsetHeight={measuredHeight} bind:offsetWidth={measuredWidth}>
-        <p class="my-2 border-2 border-transparent" class:py-4={!$displayVertical$} class:px-2={!$displayVertical$} class:py-2={$displayVertical$} class:px-4={$displayVertical$}>
-            トランスジェンダーの権利
-        </p>
-    </div>
+	<div aria-hidden="true" class="absolute invisible pointer-events-none opacity-0 -z-50 flex" class:flex-col={!$displayVertical$} bind:offsetHeight={measuredHeight} bind:offsetWidth={measuredWidth}>
+		<p class="my-2 border-2 border-transparent" class:py-4={!$displayVertical$} class:px-2={!$displayVertical$} class:py-2={$displayVertical$} class:px-4={$displayVertical$}>
+			トランスジェンダーの権利
+		</p>
+	</div>
 
-	<!-- Virtual List Wrapper for exact pixel dimension tracking -->
 	<div class="w-full h-full relative" class:virtual-list-pad-y={!$displayVertical$} class:virtual-list-pad-x={$displayVertical$} bind:clientWidth={listWidth} bind:clientHeight={listHeight}>
 		{#if listWidth && listHeight}
 		<VirtualList
@@ -1033,19 +1027,19 @@
 </div>
 <style>
 	:global(.virtual-list-pad-y > div) {
-        padding-top: 2rem;
-        box-sizing: border-box;
-    }
-    :global(.virtual-list-pad-y > div > div) {
-        padding-bottom: 2rem;
-        box-sizing: content-box;
-    }
-    :global(.virtual-list-pad-x > div) {
-        padding-right: 2rem;
-        box-sizing: border-box;
-    }
-    :global(.virtual-list-pad-x > div > div) {
-        padding-left: 2rem;
-        box-sizing: content-box;
-    }
+		padding-top: 2rem;
+		box-sizing: border-box;
+	}
+	:global(.virtual-list-pad-y > div > div) {
+		padding-bottom: 2rem;
+		box-sizing: content-box;
+	}
+	:global(.virtual-list-pad-x > div) {
+		padding-right: 2rem;
+		box-sizing: border-box;
+	}
+	:global(.virtual-list-pad-x > div > div) {
+		padding-left: 2rem;
+		box-sizing: content-box;
+	}
 </style>

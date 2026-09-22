@@ -352,8 +352,8 @@
 
 		dataFileInput.value = null;
 		tick().then(() => {
-    		dispatch('layoutChange');
-    		dispatch('dataImported');
+			dispatch('layoutChange');
+			dispatch('dataImported');
 		});
 	}
 
@@ -418,9 +418,9 @@
 		});
 
 		if (!canceled) {
-                   window.localStorage.removeItem(storageKey);
-                   await removeIDBItem(storageKey);
-               }
+			window.localStorage.removeItem(storageKey);
+			await removeIDBItem(storageKey);
+		}
 	}
 
 	function handleCharacterMilestoneBlur(event) {
@@ -495,8 +495,8 @@
 		selectedLineIds = selectedLineIds.filter((selectedLineId) => !removedIds.has(selectedLineId));
 
 		if (removedIds.size > 0) {
-        	dispatch('linesRemoved', Array.from(removedIds));
-    	}
+			dispatch('linesRemoved', Array.from(removedIds));
+		}
 	}
 
 	function handleMaxLinesBlur(event) {
@@ -581,8 +581,8 @@
 			selectedLineIds = selectedLineIds.filter((selectedLineId) => !removedLineIds.has(selectedLineId));
 
 			if (removedLineIds.size > 0) {
-            	dispatch('linesRemoved', Array.from(removedLineIds));
-        	}
+				dispatch('linesRemoved', Array.from(removedLineIds));
+			}
 		}
 	}
 

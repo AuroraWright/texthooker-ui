@@ -31,12 +31,12 @@
 	$: isVerticalDisplay = !pipWindow && $displayVertical$;
 
 	onDestroy(() => {
-	    document.removeEventListener('click', clickOutsideHandler, false);
-	    
-	    if (isEditable && paragraph) {
-	        isEditable = false;
-	        dispatch('edit', { inEdit: false });
-	    }
+		document.removeEventListener('click', clickOutsideHandler, false);
+		
+		if (isEditable && paragraph) {
+			isEditable = false;
+			dispatch('edit', { inEdit: false });
+		}
 	});
 
 	function handleDblClick(event: MouseEvent) {
@@ -64,17 +64,17 @@
 	}
 
 	function clickOutsideHandler(event: MouseEvent) {
-	    const target = event.target as Node;
-	    if (!paragraph.contains(target)) {
-	        if (isEditable) { // Only dispatch if it hasn't been closed already
-	            isEditable = false;
-	            document.removeEventListener('click', clickOutsideHandler, false);
-	            dispatch('edit', {
-	                inEdit: false,
-	                data: { originalText, newText: paragraph.innerText, lineIndex: -1, line },
-	            });
-	        }
-	    }
+		const target = event.target as Node;
+		if (!paragraph.contains(target)) {
+			if (isEditable) {
+				isEditable = false;
+				document.removeEventListener('click', clickOutsideHandler, false);
+				dispatch('edit', {
+					inEdit: false,
+					data: { originalText, newText: paragraph.innerText, lineIndex: -1, line },
+				});
+			}
+		}
 	}
 
 	function lineFly(node: HTMLElement) {
