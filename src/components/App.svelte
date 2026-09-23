@@ -417,17 +417,19 @@
 		}
 	}
 
-	function measureSize(node: HTMLElement, params: { lineId: string; actual: number; virtual: number }) {
-		let { lineId, actual, virtual } = params;
+	function measureSize(node: HTMLElement, params: { line: LineItem; virtual: number }) {
+		let { line, virtual } = params;
+		let lineId = line.id;
+		let isNewLine = newLines.has(line);
 		mountedNodes.set(lineId, { node, getVirtual: () => virtual });
+
 		const ro = new ResizeObserver(() => {
 			const size = $displayVertical$ ? node.offsetWidth : node.offsetHeight;
-
 			const currentSize = lineSizes.get(lineId);
+
 			if (!currentSize || Math.abs(currentSize - size) > 1) {
 				lineSizes.set(lineId, size);
 				pendingInvalidations.add(virtual);
-
 				if (!recomputePending) {
 					recomputePending = true;
 					tick().then(() => {
@@ -438,21 +440,34 @@
 						recomputePending = false;
 
 						const targetIndex = mapIndex($lineData$.length - 1);
-						if (virtual === targetIndex && !$reverseLineOrder$ && !showSearch) {
+						if (isNewLine && virtual === targetIndex && !$reverseLineOrder$ && !showSearch) {
 							virtualListRef.scrollListToIndex(virtual, listScrollBehavior, 'end');
 						}
+						isNewLine = false;
 					});
 				}
 			}
 		});
+
 		ro.observe(node);
 
 		return {
-			update(newParams: { lineId: string; actual: number; virtual: number }) {
-				lineId = newParams.lineId;
-				actual = newParams.actual;
+			update(newParams: { line: LineItem; virtual: number }) {
+				const newLineId = newParams.line.id;
+
+				if (lineId !== newLineId) {
+					mountedNodes.delete(lineId);
+
+					line = newParams.line;
+					lineId = newLineId;
+					isNewLine = newLines.has(line);
+
+					mountedNodes.set(lineId, { node, getVirtual: () => virtual });
+				} else {
+					line = newParams.line;
+				}
+
 				virtual = newParams.virtual;
-				mountedNodes.set(lineId, { node, getVirtual: () => virtual });
 			},
 			destroy() {
 				mountedNodes.delete(lineId);
@@ -1064,7 +1079,7 @@
 				<div slot="item" let:index let:style {style} class="absolute" class:px-4={!$displayVertical$} class:py-4={$displayVertical$} class:w-full={!$displayVertical$} class:h-full={$displayVertical$}>
 					{@const actualIndex = mapIndex(index)}
 					{#if $lineData$[actualIndex]}
-						<div use:measureSize={{ lineId: $lineData$[actualIndex].id, actual: actualIndex, virtual: index }} class="flex flex-col" class:w-full={!$displayVertical$} class:h-full={$displayVertical$}>
+						<div use:measureSize={{ line: $lineData$[actualIndex], virtual: index }} class="flex flex-col" class:w-full={!$displayVertical$} class:h-full={$displayVertical$}>
 							<div
 								 class="transition-colors duration-200 rounded"
 								 class:w-full={!$displayVertical$} class:h-full={$displayVertical$}
