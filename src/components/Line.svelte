@@ -19,6 +19,8 @@
 	export let line: LineItem;
 	export let pipWindow: Window = undefined;
 	export let isSelected = false;
+	export let searchQuery = '';
+	export let isCurrentMatchLine = false;
 
 	const isNew = newLines.has(line);
 	const dispatch = createEventDispatcher<{
@@ -86,6 +88,16 @@
 		}
 	}
 
+	function getSegments(text: string, query: string) {
+		if (!query) return [{ match: false, text }];
+		const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		const regex = new RegExp(`(${escaped})`, 'gi');
+		return text.split(regex).filter(Boolean).map(part => ({
+			match: part.toLowerCase() === query.toLowerCase(),
+			text: part
+		}));
+	}
+
 	function lineFly(node: HTMLElement) {
 		if (!$enableLineAnimation$ || !isNew) {
 			return { duration: 0, delay: 0 };
@@ -115,7 +127,21 @@
 	bind:this={paragraph}
 	in:lineFly
 >
-	{line.text}
+	{#if !isEditable && searchQuery}
+		{#each getSegments(line.text, searchQuery) as segment}
+			{#if segment.match}
+				<mark
+					class="text-black"
+					class:bg-yellow-300={!isCurrentMatchLine}
+					class:bg-amber-500={isCurrentMatchLine}
+				>{segment.text}</mark>
+			{:else}
+				{segment.text}
+			{/if}
+		{/each}
+	{:else}
+		{line.text}
+	{/if}
 </p>
 {@html newLineCharacter}
 {#if $milestoneLines$.has(line.id)}
