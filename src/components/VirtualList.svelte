@@ -11,9 +11,6 @@
 	export let padding: number = 0;
 
 	let updateStatePending = false;
-	let dynamicEstimatedSize = estimatedItemSize;
-	let measuredCount = 0;
-	let measuredSum = 0;
 
 	let rootNode: HTMLElement;
 	let scrollOffset = 0;
@@ -32,18 +29,11 @@
 
 		for (const index of indices) {
 			if (sizeCache[index] !== undefined) {
-				measuredSum -= sizeCache[index] as number;
-				measuredCount--;
 				sizeCache[index] = undefined;
 			}
 			if (index < lowestChangedIndex) {
 				lowestChangedIndex = index;
 			}
-		}
-		if (measuredCount > 0) {
-			dynamicEstimatedSize = measuredSum / measuredCount;
-		} else {
-			dynamicEstimatedSize = estimatedItemSize;
 		}
 
 		offsetCache.length = Math.min(offsetCache.length, lowestChangedIndex + 1);
@@ -61,12 +51,9 @@
 		scheduleUpdateState();
 	}
 
-	export function clearCacheAndAverage() {
+	export function clearCache() {
 		sizeCache = [];
 		offsetCache = [0];
-		measuredCount = 0;
-		measuredSum = 0;
-		dynamicEstimatedSize = estimatedItemSize;
 		updateState();
 	}
 
@@ -104,12 +91,24 @@
 			const maxScroll = Math.max(0, totalSize - containerSize + (2 * padding));
 			newScrollOffset = Math.max(0, Math.min(maxScroll, newScrollOffset));
 
+			if (behavior === 'smooth') {
+				const threshold = Math.max(300, containerSize); 
+				const isNearStart = scrollOffset <= threshold;
+				const isNearEnd = scrollOffset >= maxScroll - threshold;
+
+				if (alignment === 'end' && !isNearEnd) {
+					behavior = 'auto';
+				} else if (alignment === 'start' && !isNearStart) {
+					behavior = 'auto';
+				}
+			}
+
 			if (scrollDirection === 'vertical') {
-	            rootNode.scrollTo({ top: newScrollOffset, left: 0, behavior });
-	        }
-	        else {
-	            rootNode.scrollTo({ left: rtl ? -newScrollOffset : newScrollOffset, top: 0, behavior });
-	        }
+				rootNode.scrollTo({ top: newScrollOffset, left: 0, behavior });
+			}
+			else {
+				rootNode.scrollTo({ left: rtl ? -newScrollOffset : newScrollOffset, top: 0, behavior });
+			}
 			scrollOffset = newScrollOffset;
 			updateState();
 		});
@@ -118,7 +117,7 @@
 	function getSize(index: number) {
 		if (sizeCache[index] !== undefined) return sizeCache[index];
 
-		let size = dynamicEstimatedSize;
+		let size = estimatedItemSize;
 		let isMeasured = false;
 
 		const val = itemSize(index);
@@ -128,9 +127,6 @@
 		}
 
 		if (isMeasured) {
-			measuredCount++;
-			measuredSum += size;
-			dynamicEstimatedSize = measuredSum / measuredCount;
 			sizeCache[index] = size;
 		}
 
@@ -155,7 +151,7 @@
 			const mid = Math.floor((low + high) / 2);
 			const currentOffset = offsetCache[mid] !== undefined 
 				? offsetCache[mid] 
-				: mid * dynamicEstimatedSize;
+				: mid * estimatedItemSize;
 				
 			if (currentOffset === offset) return mid;
 			if (currentOffset < offset) {
@@ -231,7 +227,7 @@
 		}
 
 		if (directionChanged || sizeChanged || hasDecreased) {
-			clearCacheAndAverage();
+			clearCache();
 			return;
 		}
 

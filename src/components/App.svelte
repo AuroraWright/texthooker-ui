@@ -220,9 +220,9 @@
 	);
 
 	const virtualItemSize = (index: number) => {
-	    const actualIndex = mapIndex(index);
-	    const line = $lineData$[actualIndex];
-	    return line ? lineSizes.get(line.id) : undefined;
+		const actualIndex = mapIndex(index);
+		const line = $lineData$[actualIndex];
+		return line ? lineSizes.get(line.id) : undefined;
 	};
 
 	$: iconSize = isSmFactor ? '1.5rem' : '1.25rem';
@@ -254,7 +254,7 @@
 		if (currentReflowDimension !== lastReflowDimension) {
 			if (lastReflowDimension !== 0) {
 				lineSizes.clear();
-				virtualListRef?.clearCacheAndAverage();
+				virtualListRef?.clearCache();
 			}
 			lastReflowDimension = currentReflowDimension;
 		}
@@ -273,7 +273,7 @@
 		$linePadding$;
 
 		lineSizes.clear();
-		virtualListRef?.clearCacheAndAverage();
+		virtualListRef?.clearCache();
 	}
 
 	let prevMilestoneIds = new Set<string>();
@@ -435,8 +435,8 @@
 						recomputePending = false;
 
 						const targetIndex = mapIndex($lineData$.length - 1);
-						if (virtual === targetIndex && !showSearch) {
-							virtualListRef.scrollListToIndex(virtual, listScrollBehavior, $reverseLineOrder$ ? 'start' : 'end');
+						if (virtual === targetIndex && !$reverseLineOrder$ && !showSearch) {
+							virtualListRef.scrollListToIndex(virtual, listScrollBehavior, 'end');
 						}
 					});
 				}
@@ -537,7 +537,7 @@
 
 		$lineData$ = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData());
 		$actionHistory$ = $actionHistory$;
-		virtualListRef?.clearCacheAndAverage();
+		virtualListRef?.clearCache();
 	}
 
 	function removeLastLine() {
@@ -687,7 +687,7 @@
 			const alignment = $reverseLineOrder$ ? 'start' : 'end';
 			virtualListRef.scrollListToIndex(targetIndex, listScrollBehavior, alignment);
 
-			if (forceInstant) {
+			if (forceInstant && !$reverseLineOrder$) {
 				setTimeout(() => {
 					if (virtualListRef && $lineData$.length > 0 && !showSearch) {
 						const updatedTargetIndex = mapIndex($lineData$.length - 1);
@@ -782,7 +782,7 @@
 				selectedLineIds = selectedLineIds.filter((selectedLineId) => !oldLinesToRemove.has(selectedLineId));
 			}
 
-			virtualListRef?.clearCacheAndAverage();
+			virtualListRef?.clearCache();
 		}
 		return $lineData$;
 	}
@@ -823,7 +823,7 @@
 				}
 
 				lineSizes.clear();
-				virtualListRef?.clearCacheAndAverage();
+				virtualListRef?.clearCache();
 				$openDialog$ = { message: `Operation executed`, showCancel: false };
 			}
 		} catch ({ message }) {
@@ -986,7 +986,7 @@
 		on:linesRemoved={(event) => {event.detail.forEach(id => lineSizes.delete(id));}}
 		on:dataResetOrImported={() => {
 			lineSizes.clear();
-			virtualListRef?.clearCacheAndAverage();
+			virtualListRef?.clearCache();
 			newlyAddedLineIds.clear();
 			newlyAddedLineIds = newlyAddedLineIds;
 		}}
