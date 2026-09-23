@@ -109,7 +109,6 @@
 	let matchIndices: number[] = [];
 	let currentMatchStep = 0;
 	let searchJumpIndex: number | undefined = undefined;
-	let listScrollBehavior: ScrollBehavior = 'auto';
 	let measuredHeight = 0;
 	let measuredWidth = 0;
 
@@ -231,6 +230,8 @@
 	const mountedNodes = new Map<string, { node: HTMLElement; getVirtual: () => number }>();
 
 	$: iconSize = isSmFactor ? '1.5rem' : '1.25rem';
+
+	$: listScrollBehavior = $enableLineAnimation$ ? 'smooth' : 'auto';
 
 	$: $enabledReplacements$ = $replacements$.filter((replacment) => replacment.enabled);
 
@@ -716,17 +717,17 @@
 	}
 
 	function executeUpdateScroll(forceInstant: boolean = false) {
-		listScrollBehavior = ($enableLineAnimation$ && forceInstant !== true) ? 'smooth' : 'auto';
+		const scrollBehavior = forceInstant !== true ? listScrollBehavior : 'auto';
 		if (virtualListRef && $lineData$.length > 0 && !showSearch) {
 			const targetIndex = mapIndex($lineData$.length - 1);
 			const alignment = $reverseLineOrder$ ? 'start' : 'end';
-			virtualListRef.scrollListToIndex(targetIndex, listScrollBehavior, alignment);
+			virtualListRef.scrollListToIndex(targetIndex, scrollBehavior, alignment);
 
 			if (forceInstant && !$reverseLineOrder$) {
 				setTimeout(() => {
 					if (virtualListRef && $lineData$.length > 0 && !showSearch) {
 						const updatedTargetIndex = mapIndex($lineData$.length - 1);
-						virtualListRef.scrollListToIndex(updatedTargetIndex, listScrollBehavior, alignment);
+						virtualListRef.scrollListToIndex(updatedTargetIndex, 'auto', alignment);
 					}
 				}, 100);
 			}
@@ -1088,7 +1089,7 @@
 									<Line
 										line={$lineData$[actualIndex]}
 										isSelected={selectedLineIds.includes($lineData$[actualIndex].id)}
-										searchQuery={showSearch ? searchQuery.trim() : ''}
+										searchQuery={showSearch && matchIndices.includes(actualIndex) ? searchQuery.trim() : ''}
 										isCurrentMatchLine={actualIndex === searchJumpIndex}
 										on:selected={({ detail }) => {
 											selectedLineIds = [...selectedLineIds, detail];
