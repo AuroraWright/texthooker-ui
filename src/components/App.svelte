@@ -906,8 +906,8 @@
 	<input 
 		bind:this={searchInputRef}
 		bind:value={searchQuery}
-		type="text" 
-		placeholder="Search lines..." 
+		type="text"
+		placeholder="Search text..."
 		class="input input-sm input-bordered w-64"
 		on:keydown={(e) => {
 			if (e.key === 'Enter' && !e.isComposing) {
