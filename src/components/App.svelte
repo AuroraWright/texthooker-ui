@@ -548,8 +548,6 @@
 			if (text) {
 				const { id, index } = lineToRevert;
 
-				markLineAsNew(id);
-
 				if (index > $lineData$.length - 1) {
 					$lineData$.push({ id, text });
 				} else if ($lineData$[index].id === id) {
