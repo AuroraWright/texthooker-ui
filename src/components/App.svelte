@@ -225,6 +225,8 @@
 		return line ? lineSizes.get(line.id) : undefined;
 	};
 
+	const mountedNodes = new Map<string, { node: HTMLElement; getVirtual: () => number }>();
+
 	$: iconSize = isSmFactor ? '1.5rem' : '1.25rem';
 
 	$: $enabledReplacements$ = $replacements$.filter((replacment) => replacment.enabled);
@@ -255,6 +257,7 @@
 			if (lastReflowDimension !== 0) {
 				lineSizes.clear();
 				virtualListRef?.clearCache();
+				tick().then(remeasureMountedLines);
 			}
 			lastReflowDimension = currentReflowDimension;
 		}
@@ -265,15 +268,21 @@
 		$reverseLineOrder$;
 		$fontSize$;
 		$onlineFont$;
+		$linePadding$;
 		$customCSS$;
-		$theme$;
 		$preserveWhitespace$;
 		$removeAllWhitespace$;
 		$characterMilestone$;
-		$linePadding$;
 
 		lineSizes.clear();
 		virtualListRef?.clearCache();
+		tick().then(remeasureMountedLines);
+	}
+
+	$: if ($onlineFont$ && typeof document !== 'undefined' && document.fonts) {
+		document.fonts.ready.then(() => {
+			tick().then(remeasureMountedLines);
+		});
 	}
 
 	let prevMilestoneIds = new Set<string>();
@@ -417,6 +426,7 @@
 
 	function measureSize(node: HTMLElement, params: { lineId: string; actual: number; virtual: number }) {
 		let { lineId, actual, virtual } = params;
+		mountedNodes.set(lineId, { node, getVirtual: () => virtual });
 		const ro = new ResizeObserver(() => {
 			const size = $displayVertical$ ? node.offsetWidth : node.offsetHeight;
 
@@ -449,10 +459,29 @@
 				lineId = newParams.lineId;
 				actual = newParams.actual;
 				virtual = newParams.virtual;
+				mountedNodes.set(lineId, { node, getVirtual: () => virtual });
 			},
 			destroy() {
+				mountedNodes.delete(lineId);
 				ro.disconnect();
 			}
+		}
+	}
+
+	function remeasureMountedLines() {
+		if (!virtualListRef) return;
+		const invalidIndices: number[] = [];
+
+		for (const [id, { node, getVirtual }] of mountedNodes) {
+			const size = $displayVertical$ ? node.offsetWidth : node.offsetHeight;
+			if (size > 0) {
+				lineSizes.set(id, size);
+				invalidIndices.push(getVirtual());
+			}
+		}
+
+		if (invalidIndices.length > 0) {
+			virtualListRef.invalidateItemSizes(invalidIndices);
 		}
 	}
 
@@ -831,6 +860,13 @@
 		} finally {
 			$lineData$ = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData());
 			$showSpinner$ = false;
+
+			await tick();
+
+			if (hasChanges) {
+				remeasureMountedLines();
+			}
+
 			executeUpdateScroll(true);
 		}
 	}
