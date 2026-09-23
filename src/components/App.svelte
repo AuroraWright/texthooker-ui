@@ -158,7 +158,7 @@
 				const newId = generateRandomUUID();
 				const item: LineItem = { id: newId, text };
 
-				if (initialScrollDone && !$showSpinner$) {
+				if (initialScrollDone && !$showSpinner$ && !showSearch) {
 					newLines.add(item);
 				}
 				currentLines.push(item);
