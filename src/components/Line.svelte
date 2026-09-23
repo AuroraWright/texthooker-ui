@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { mdiTrophy } from '@mdi/js';
-	import { createEventDispatcher, onDestroy, tick } from 'svelte';
+	import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import {
 		displayVertical$,
@@ -10,6 +10,7 @@
 		reverseLineOrder$,
 		linePadding$,
 		showLinePoints$,
+		newLines
 	} from '../stores/stores';
 	import type { LineItem, LineItemEditEvent } from '../types';
 	import { dummyFn, newLineCharacter, updateScroll } from '../util';
@@ -18,8 +19,8 @@
 	export let line: LineItem;
 	export let pipWindow: Window = undefined;
 	export let isSelected = false;
-	export let isNew = false;
 
+	const isNew = newLines.has(line);
 	const dispatch = createEventDispatcher<{
 		deselected: string;
 		selected: string;
@@ -31,6 +32,12 @@
 	let isEditable = false;
 
 	$: isVerticalDisplay = !pipWindow && $displayVertical$;
+
+	onMount(() => {
+		if (isNew) {
+			newLines.delete(line);
+		}
+	});
 
 	onDestroy(() => {
 		document.removeEventListener('click', clickOutsideHandler, false);

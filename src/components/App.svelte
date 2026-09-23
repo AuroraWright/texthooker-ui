@@ -59,6 +59,7 @@
 		showSpinner$,
 		theme$,
 		websocketUrl$,
+		newLines
 	} from '../stores/stores';
 	import { LineType, OnlineFont, Theme, type LineItem, type LineItemEditEvent } from '../types';
 	import {
@@ -109,7 +110,6 @@
 	let currentMatchStep = 0;
 	let searchJumpIndex: number | undefined = undefined;
 	let listScrollBehavior: ScrollBehavior = 'auto';
-	let newlyAddedLineIds = new Set<string>();
 	let measuredHeight = 0;
 	let measuredWidth = 0;
 
@@ -156,9 +156,12 @@
 				const isPaste = lineType === LineType.PASTE;
 				const currentLines = applyMaxLinesAndGetRemainingLineData(1);
 				const newId = generateRandomUUID();
+				const item: LineItem = { id: newId, text };
 
-				markLineAsNew(newId);
-				currentLines.push({ id: newId, text });
+				if (initialScrollDone && !$showSpinner$) {
+				    newLines.add(item);
+				}
+				currentLines.push(item);
 				$lineData$ = applyEqualLineStartMerge(currentLines);
 				if ($reverseLineOrder$) {
 					virtualListRef?.shiftIndices(1);
@@ -370,17 +373,6 @@
 				});
 		}
 	});
-
-	function markLineAsNew(id: string) {
-		if (!initialScrollDone || $showSpinner$) return;
-
-		newlyAddedLineIds.add(id);
-		newlyAddedLineIds = newlyAddedLineIds;
-		setTimeout(() => {
-			newlyAddedLineIds.delete(id);
-			newlyAddedLineIds = newlyAddedLineIds;
-		}, 1000);
-	}
 
 	function mountFunction() {
 		isSmFactor = window.matchMedia('(min-width: 640px)').matches;
@@ -1021,8 +1013,6 @@
 		on:dataResetOrImported={() => {
 			lineSizes.clear();
 			virtualListRef?.clearCache();
-			newlyAddedLineIds.clear();
-			newlyAddedLineIds = newlyAddedLineIds;
 		}}
 	/>
 	<Presets isQuickSwitch={true} on:layoutChange={() => executeUpdateScroll(true)} />
@@ -1081,7 +1071,6 @@
 						 {#key $lineData$[actualIndex].id}
 						<Line
 							line={$lineData$[actualIndex]}
-							isNew={newlyAddedLineIds.has($lineData$[actualIndex].id)}
 							isSelected={selectedLineIds.includes($lineData$[actualIndex].id)}
 							on:selected={({ detail }) => {
 								selectedLineIds = [...selectedLineIds, detail];
@@ -1121,7 +1110,7 @@
 >
 	{#if pipWindow}
 		{#each pipLines as line (line.id)}
-			<Line {line} {pipWindow} isNew={newlyAddedLineIds.has(line.id)} />
+			<Line {line} {pipWindow} />
 		{/each}
 	{/if}
 </div>

@@ -308,6 +308,8 @@ export const lastPipHeight$ = writableNumberSubject()('bannou-texthooker-lastPip
 
 export const lastPipWidth$ = writableNumberSubject()('bannou-texthooker-lastPipWidth', 0);
 
+export const newLines = new WeakSet<LineItem>();
+
 export async function resetAllData() {
 	if (!skipResetConfirmations$.getValue()) {
 		const { canceled } = await new Promise<DialogResult>((resolve) => {
