@@ -272,6 +272,7 @@
 		$fontSize$;
 		$onlineFont$;
 		$linePadding$;
+		$showLinePoints$;
 		$customCSS$;
 		$preserveWhitespace$;
 		$removeAllWhitespace$;
