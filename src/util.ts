@@ -2,6 +2,9 @@ import { filter, map, pipe } from 'rxjs';
 
 import type { ReplacementItem } from './types';
 
+const regexCache = new Map<string, RegExp>();
+const replaceStringCache = new Map<string, string>();
+
 export function dummyFn() {}
 
 export function reduceToEmptyString() {
@@ -81,13 +84,27 @@ export function applyReplacements(originalText: string, replacements: Replacemen
 	for (let index = 0, { length } = replacements; index < length; index += 1) {
 		const replacement = replacements[index];
 
-		adjustedText = adjustedText.replace(
-			new RegExp(replacement.pattern, replacement.flags.join('')),
-			replacement.replaces.replace(/\\t/gm, '\t').replace(/\\n/gm, '\n')
-		);
-	}
+		const cacheKey = replacement.pattern + '||' + replacement.flags.join('');
+		let regex = regexCache.get(cacheKey);
+		if (!regex) {
+			regex = new RegExp(replacement.pattern, replacement.flags.join(''));
+			regexCache.set(cacheKey, regex);
+		}
 
+		let replacesStr = replaceStringCache.get(replacement.replaces);
+		if (replacesStr === undefined) {
+			replacesStr = replacement.replaces.replace(/\\t/gm, '\t').replace(/\\n/gm, '\n');
+			replaceStringCache.set(replacement.replaces, replacesStr);
+		}
+
+		adjustedText = adjustedText.replace(regex, replacesStr);
+	}
 	return adjustedText;
+}
+
+export function clearReplacementCaches() {
+	regexCache.clear();
+	replaceStringCache.clear();
 }
 
 export function applyCustomCSS(document: Document, customCSS: string) {

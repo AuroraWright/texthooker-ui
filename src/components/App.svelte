@@ -59,13 +59,14 @@
 		showSpinner$,
 		theme$,
 		websocketUrl$,
-		newLines
+		newLines,
 	} from '../stores/stores';
 	import { LineType, OnlineFont, Theme, type LineItem, type LineItemEditEvent } from '../types';
 	import {
 		applyAfkBlur,
 		applyCustomCSS,
 		applyReplacements,
+		clearReplacementCaches,
 		generateRandomUUID,
 		newLineCharacter,
 		reduceToEmptyString,
@@ -233,7 +234,10 @@
 
 	$: listScrollBehavior = $enableLineAnimation$ ? 'smooth' : 'auto';
 
-	$: $enabledReplacements$ = $replacements$.filter((replacment) => replacment.enabled);
+	$: {
+		$enabledReplacements$ = $replacements$.filter((replacement) => replacement.enabled);
+		clearReplacementCaches();
+	}
 
 	$: pipAvailable = 'documentPictureInPicture' in window && !!pipContainer;
 
