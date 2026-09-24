@@ -1067,46 +1067,48 @@
 		</p>
 	</div>
 
-	<div class="w-full h-full relative" bind:clientWidth={listWidth} bind:clientHeight={listHeight}>
+	<div class="flex-1 w-full h-full min-h-0 min-w-0 relative" bind:clientWidth={listWidth} bind:clientHeight={listHeight}>
 		{#if listWidth && listHeight}
-			<VirtualList
-				bind:this={virtualListRef}
-				width="{listWidth}px"
-				height="{listHeight}px"
-				itemCount={$lineData$.length}
-				itemSize={virtualItemSize}
-				estimatedItemSize={estimatedItemSize}
-				scrollDirection={$displayVertical$ ? 'horizontal' : 'vertical'}
-				padding="2rem"
-			>
-				<div slot="item" let:index let:style {style} class="absolute" class:px-4={!$displayVertical$} class:py-4={$displayVertical$} class:w-full={!$displayVertical$} class:h-full={$displayVertical$}>
-					{@const actualIndex = mapIndex(index)}
-					{#if $lineData$[actualIndex]}
-						<div use:measureSize={{ line: $lineData$[actualIndex], virtual: index }} class="flex flex-col" class:w-full={!$displayVertical$} class:h-full={$displayVertical$}>
-							<div
-								 class="transition-colors duration-200 rounded"
-								 class:w-full={!$displayVertical$} class:h-full={$displayVertical$}
-							>
-								{#key $lineData$[actualIndex].id}
-									<Line
-										line={$lineData$[actualIndex]}
-										isSelected={selectedLineIds.includes($lineData$[actualIndex].id)}
-										searchQuery={showSearch && matchIndices.includes(actualIndex) ? searchQuery.trim() : ''}
-										isCurrentMatchLine={actualIndex === searchJumpIndex}
-										on:selected={({ detail }) => {
-											selectedLineIds = [...selectedLineIds, detail];
-										}}
-										on:deselected={({ detail }) => {
-											selectedLineIds = selectedLineIds.filter((selectedLineId) => selectedLineId !== detail);
-										}}
-										on:edit={handleLineEdit}
-									/>
-								{/key}
+			<div class="absolute inset-0">
+				<VirtualList
+					bind:this={virtualListRef}
+					width="{listWidth}px"
+					height="{listHeight}px"
+					itemCount={$lineData$.length}
+					itemSize={virtualItemSize}
+					estimatedItemSize={estimatedItemSize}
+					scrollDirection={$displayVertical$ ? 'horizontal' : 'vertical'}
+					padding="2rem"
+				>
+					<div slot="item" let:index let:style {style} class="absolute" class:px-4={!$displayVertical$} class:py-4={$displayVertical$} class:w-full={!$displayVertical$} class:h-full={$displayVertical$}>
+						{@const actualIndex = mapIndex(index)}
+						{#if $lineData$[actualIndex]}
+							<div use:measureSize={{ line: $lineData$[actualIndex], virtual: index }} class="flex flex-col" class:w-full={!$displayVertical$} class:h-full={$displayVertical$}>
+								<div
+									 class="transition-colors duration-200 rounded"
+									 class:w-full={!$displayVertical$} class:h-full={$displayVertical$}
+								>
+									{#key $lineData$[actualIndex].id}
+										<Line
+											line={$lineData$[actualIndex]}
+											isSelected={selectedLineIds.includes($lineData$[actualIndex].id)}
+											searchQuery={showSearch && matchIndices.includes(actualIndex) ? searchQuery.trim() : ''}
+											isCurrentMatchLine={actualIndex === searchJumpIndex}
+											on:selected={({ detail }) => {
+												selectedLineIds = [...selectedLineIds, detail];
+											}}
+											on:deselected={({ detail }) => {
+												selectedLineIds = selectedLineIds.filter((selectedLineId) => selectedLineId !== detail);
+											}}
+											on:edit={handleLineEdit}
+										/>
+									{/key}
+								</div>
 							</div>
-						</div>
-					{/if}
-				</div>
-			</VirtualList>
+						{/if}
+					</div>
+				</VirtualList>
+			</div>
 		{/if}
 	</div>
 </main>
