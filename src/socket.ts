@@ -44,10 +44,6 @@ export class SocketConnection {
 		);
 	}
 
-	getCurrentUrl() {
-		return this.websocketUrl;
-	}
-
 	connect() {
 		if (this.socket?.readyState < 2) {
 			return;

@@ -218,7 +218,10 @@
 
 	const resizeHandler$ = fromEvent(window, 'resize').pipe(
 		debounceTime(500),
-		tap(mountFunction),
+		tap(() => {
+			isSmFactor = window.matchMedia('(min-width: 640px)').matches;
+			executeUpdateScroll(true);
+		}),
 		reduceToEmptyString(),
 	);
 
@@ -260,7 +263,7 @@
 
 	$: {
 		const currentReflowDimension = $displayVertical$ ? listHeight : listWidth;
-		
+
 		if (currentReflowDimension !== lastReflowDimension) {
 			if (lastReflowDimension !== 0) {
 				lineSizes.clear();
@@ -367,7 +370,7 @@
 	}
 
 	onMount(() => {
-		mountFunction();
+		isSmFactor = window.matchMedia('(min-width: 640px)').matches;
 		if (wakeLockAvailable) {
 			wakeLock = navigator.wakeLock
 				.request('screen')
@@ -380,11 +383,6 @@
 				});
 		}
 	});
-
-	function mountFunction() {
-		isSmFactor = window.matchMedia('(min-width: 640px)').matches;
-		executeUpdateScroll(true);
-	}
 
 	function mapIndex(index: number): number {
 		return $reverseLineOrder$ ? $lineData$.length - 1 - index : index;

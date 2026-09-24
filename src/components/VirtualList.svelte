@@ -62,7 +62,7 @@
 		alignment: 'start' | 'center' | 'end' | 'auto' = 'auto'
 	) {
 		if (index === undefined || !rootNode || itemCount === 0) return;
-		
+
 		tick().then(() => {
 			if (itemCount === 0) return;
 			const validIndex = Math.max(0, Math.min(itemCount - 1, index));
@@ -151,7 +151,7 @@
 			const currentOffset = offsetCache[mid] !== undefined 
 				? offsetCache[mid] 
 				: mid * estimatedItemSize;
-				
+
 			if (currentOffset === offset) return mid;
 			if (currentOffset < offset) {
 				low = mid + 1;
@@ -192,11 +192,11 @@
 	function handleScroll() {
 		if (!rootNode) return;
 		let newScrollOffset = scrollDirection === 'vertical' ? rootNode.scrollTop : rootNode.scrollLeft;
-		
+
 		if (scrollDirection === 'horizontal') {
 			newScrollOffset = Math.abs(newScrollOffset);
 		}
-		
+
 		if (newScrollOffset !== scrollOffset) {
 			scrollOffset = newScrollOffset;
 			updateState();
@@ -244,7 +244,7 @@
 
 	onMount(() => {
 		updateState();
-		
+
 		if (typeof ResizeObserver !== 'undefined' && rootNode) {
 			resizeObserver = new ResizeObserver(() => {
 				scheduleUpdateState();
@@ -262,16 +262,14 @@
 	$: handlePropsChange(itemCount, scrollDirection, estimatedItemSize);
 
 	$: {
-		if (typeof window !== 'undefined') {
-			if (padding.endsWith('rem')) {
-		        const rem = parseFloat(padding);
-		        const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-		        paddingPx = rem * rootFontSize;
-			} else {
-		        paddingPx = parseFloat(padding) || 0;
-			}
+		if (padding.endsWith('rem')) {
+			const rem = parseFloat(padding);
+			const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+			paddingPx = rem * rootFontSize;
+		} else {
+			paddingPx = parseFloat(padding) || 0;
 		}
-	    scheduleUpdateState();
+		scheduleUpdateState();
 	}
 </script>
 

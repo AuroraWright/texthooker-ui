@@ -7,13 +7,12 @@
 		enableLineAnimation$,
 		milestoneLines$,
 		preserveWhitespace$,
-		reverseLineOrder$,
 		linePadding$,
 		showLinePoints$,
 		newLines
 	} from '../stores/stores';
 	import type { LineItem, LineItemEditEvent } from '../types';
-	import { dummyFn, newLineCharacter, updateScroll } from '../util';
+	import { dummyFn, newLineCharacter } from '../util';
 	import Icon from './Icon.svelte';
 
 	export let line: LineItem;
@@ -43,7 +42,7 @@
 
 	onDestroy(() => {
 		document.removeEventListener('click', clickOutsideHandler, false);
-		
+
 		if (isEditable && paragraph) {
 			isEditable = false;
 			dispatch('edit', { inEdit: false });

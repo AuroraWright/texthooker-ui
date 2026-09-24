@@ -200,22 +200,6 @@
 		}
 	}
 
-	function updateCustomCSS(customCSS: string) {
-		const textNode = document.createTextNode(customCSS);
-
-		let styleElement = document.getElementById('user-css');
-
-		if (styleElement) {
-			styleElement.replaceChild(textNode, styleElement.firstChild);
-		} else {
-			styleElement = document.createElement('style');
-			styleElement.id = 'user-css';
-
-			styleElement.appendChild(textNode);
-			document.head.append(styleElement);
-		}
-	}
-
 	function handleSettingsClick(event: MouseEvent) {
 		const target = event.target as any;
 
