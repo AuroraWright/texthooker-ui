@@ -330,6 +330,7 @@
 
 			if (hasCachedChanges && virtualListRef) {
 				virtualListRef.invalidateItemSizes(invalidVirtualIndices);
+				tick().then(remeasureMountedLines);
 			}
 		}
 	}
