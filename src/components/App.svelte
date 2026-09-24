@@ -1069,18 +1069,17 @@
 		</p>
 	</div>
 
-	<div class="w-full h-full relative" class:virtual-list-pad-y={!$displayVertical$} class:virtual-list-pad-x={$displayVertical$} bind:clientWidth={listWidth} bind:clientHeight={listHeight}>
+	<div class="w-full h-full relative" bind:clientWidth={listWidth} bind:clientHeight={listHeight}>
 		{#if listWidth && listHeight}
 			<VirtualList
 				bind:this={virtualListRef}
-				width={listWidth}
-				height={listHeight}
+				width="{listWidth}px"
+				height="{listHeight}px"
 				itemCount={$lineData$.length}
 				itemSize={virtualItemSize}
 				estimatedItemSize={estimatedItemSize}
 				scrollDirection={$displayVertical$ ? 'horizontal' : 'vertical'}
-				rtl={$displayVertical$}
-				padding={32}
+				padding="2rem"
 			>
 				<div slot="item" let:index let:style {style} class="absolute" class:px-4={!$displayVertical$} class:py-4={$displayVertical$} class:w-full={!$displayVertical$} class:h-full={$displayVertical$}>
 					{@const actualIndex = mapIndex(index)}
@@ -1138,13 +1137,3 @@
 		{/each}
 	{/if}
 </div>
-<style>
-	:global(.virtual-list-pad-y > div) {
-		padding-top: 2rem;
-		padding-bottom: 2rem;
-	}
-	:global(.virtual-list-pad-x > div) {
-		padding-right: 2rem;
-		padding-left: 2rem;
-	}
-</style>

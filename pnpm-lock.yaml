@@ -17,7 +17,7 @@ importers:
         version: 7.1.96
       '@sveltejs/vite-plugin-svelte':
         specifier: ^2.0.2
-        version: 2.0.2(svelte@3.55.0)(vite@4.0.1(@types/node@18.11.9))
+        version: 2.0.2(supports-color@7.2.0)(svelte@3.55.0)(vite@4.0.1(@types/node@18.11.9))
       '@tsconfig/svelte':
         specifier: ^3.0.0
         version: 3.0.0
@@ -35,13 +35,13 @@ importers:
         version: 2.45.0(autoprefixer@10.4.13(postcss@8.4.20))(postcss@8.4.20)
       eslint:
         specifier: ^8.30.0
-        version: 8.30.0
+        version: 8.30.0(supports-color@7.2.0)
       eslint-config-prettier:
         specifier: ^8.5.0
-        version: 8.5.0(eslint@8.30.0)
+        version: 8.5.0(eslint@8.30.0(supports-color@7.2.0))
       eslint-plugin-svelte3:
         specifier: ^4.0.0
-        version: 4.0.0(eslint@8.30.0)(svelte@3.55.0)
+        version: 4.0.0(eslint@8.30.0(supports-color@7.2.0))(svelte@3.55.0)
       postcss:
         specifier: ^8.4.20
         version: 8.4.20
@@ -361,8 +361,8 @@ packages:
     resolution: {integrity: sha512-QOSvevhslijgYwRx6Rv7zKdMF8lbRmx+uQGx2+vDc+KI/eBnsy9kit5aj23AgGu3pa4t9AgwbnXWqS+iOY+2aA==}
     engines: {node: '>= 6'}
 
-  caniuse-lite@1.0.30001434:
-    resolution: {integrity: sha512-aOBHrLmTQw//WFa2rcF1If9fa3ypkC1wzqqiKHgfdrXTWcU8C4gKVZT77eQAPWN1APys3+uQ0Df07rKauXGEYA==}
+  caniuse-lite@1.0.30001810:
+    resolution: {integrity: sha512-TITQPUkaz+aVk5GL6NhOdwk1aEaNTSDPsGFWrTuhKGtjTF70jL/Oht2W4c6rXUe5fu7Ie19VIahAXHIIiWWNeg==}
 
   chalk@4.1.2:
     resolution: {integrity: sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA==}
@@ -497,6 +497,7 @@ packages:
   eslint@8.30.0:
     resolution: {integrity: sha512-MGADB39QqYuzEGov+F/qb18r4i7DohCDOfatHaxI2iGlPuC65bwG2gxgO+7DkyL38dRFaRH7RaRAgU6JKL9rMQ==}
     engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
 
   espree@9.4.1:
@@ -1222,10 +1223,10 @@ snapshots:
   '@esbuild/win32-x64@0.16.8':
     optional: true
 
-  '@eslint/eslintrc@1.4.0':
+  '@eslint/eslintrc@1.4.0(supports-color@7.2.0)':
     dependencies:
       ajv: 6.12.6
-      debug: 4.3.4
+      debug: 4.3.4(supports-color@7.2.0)
       espree: 9.4.1
       globals: 13.19.0
       ignore: 5.2.1
@@ -1236,10 +1237,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@humanwhocodes/config-array@0.11.8':
+  '@humanwhocodes/config-array@0.11.8(supports-color@7.2.0)':
     dependencies:
       '@humanwhocodes/object-schema': 1.2.1
-      debug: 4.3.4
+      debug: 4.3.4(supports-color@7.2.0)
       minimatch: 3.1.2
     transitivePeerDependencies:
       - supports-color
@@ -1271,9 +1272,9 @@ snapshots:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.13.0
 
-  '@sveltejs/vite-plugin-svelte@2.0.2(svelte@3.55.0)(vite@4.0.1(@types/node@18.11.9))':
+  '@sveltejs/vite-plugin-svelte@2.0.2(supports-color@7.2.0)(svelte@3.55.0)(vite@4.0.1(@types/node@18.11.9))':
     dependencies:
-      debug: 4.3.4
+      debug: 4.3.4(supports-color@7.2.0)
       deepmerge: 4.2.2
       kleur: 4.1.5
       magic-string: 0.27.0
@@ -1339,7 +1340,7 @@ snapshots:
   autoprefixer@10.4.13(postcss@8.4.20):
     dependencies:
       browserslist: 4.21.4
-      caniuse-lite: 1.0.30001434
+      caniuse-lite: 1.0.30001810
       fraction.js: 4.2.0
       normalize-range: 0.1.2
       picocolors: 1.0.0
@@ -1361,7 +1362,7 @@ snapshots:
 
   browserslist@4.21.4:
     dependencies:
-      caniuse-lite: 1.0.30001434
+      caniuse-lite: 1.0.30001810
       electron-to-chromium: 1.4.284
       node-releases: 2.0.6
       update-browserslist-db: 1.0.10(browserslist@4.21.4)
@@ -1372,7 +1373,7 @@ snapshots:
 
   camelcase-css@2.0.1: {}
 
-  caniuse-lite@1.0.30001434: {}
+  caniuse-lite@1.0.30001810: {}
 
   chalk@4.1.2:
     dependencies:
@@ -1433,9 +1434,11 @@ snapshots:
     transitivePeerDependencies:
       - ts-node
 
-  debug@4.3.4:
+  debug@4.3.4(supports-color@7.2.0):
     dependencies:
       ms: 2.1.2
+    optionalDependencies:
+      supports-color: 7.2.0
 
   deep-is@0.1.4: {}
 
@@ -1492,13 +1495,13 @@ snapshots:
 
   escape-string-regexp@4.0.0: {}
 
-  eslint-config-prettier@8.5.0(eslint@8.30.0):
+  eslint-config-prettier@8.5.0(eslint@8.30.0(supports-color@7.2.0)):
     dependencies:
-      eslint: 8.30.0
+      eslint: 8.30.0(supports-color@7.2.0)
 
-  eslint-plugin-svelte3@4.0.0(eslint@8.30.0)(svelte@3.55.0):
+  eslint-plugin-svelte3@4.0.0(eslint@8.30.0(supports-color@7.2.0))(svelte@3.55.0):
     dependencies:
-      eslint: 8.30.0
+      eslint: 8.30.0(supports-color@7.2.0)
       svelte: 3.55.0
 
   eslint-scope@7.1.1:
@@ -1506,29 +1509,29 @@ snapshots:
       esrecurse: 4.3.0
       estraverse: 5.3.0
 
-  eslint-utils@3.0.0(eslint@8.30.0):
+  eslint-utils@3.0.0(eslint@8.30.0(supports-color@7.2.0)):
     dependencies:
-      eslint: 8.30.0
+      eslint: 8.30.0(supports-color@7.2.0)
       eslint-visitor-keys: 2.1.0
 
   eslint-visitor-keys@2.1.0: {}
 
   eslint-visitor-keys@3.3.0: {}
 
-  eslint@8.30.0:
+  eslint@8.30.0(supports-color@7.2.0):
     dependencies:
-      '@eslint/eslintrc': 1.4.0
-      '@humanwhocodes/config-array': 0.11.8
+      '@eslint/eslintrc': 1.4.0(supports-color@7.2.0)
+      '@humanwhocodes/config-array': 0.11.8(supports-color@7.2.0)
       '@humanwhocodes/module-importer': 1.0.1
       '@nodelib/fs.walk': 1.2.8
       ajv: 6.12.6
       chalk: 4.1.2
       cross-spawn: 7.0.3
-      debug: 4.3.4
+      debug: 4.3.4(supports-color@7.2.0)
       doctrine: 3.0.0
       escape-string-regexp: 4.0.0
       eslint-scope: 7.1.1
-      eslint-utils: 3.0.0(eslint@8.30.0)
+      eslint-utils: 3.0.0(eslint@8.30.0(supports-color@7.2.0))
       eslint-visitor-keys: 3.3.0
       espree: 9.4.1
       esquery: 1.4.0

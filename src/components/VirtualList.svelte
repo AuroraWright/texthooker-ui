@@ -1,22 +1,21 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 
-	export let width: string | number = '100%';
-	export let height: string | number = '100%';
+	export let width: string = '100%';
+	export let height: string = '100%';
 	export let itemCount: number = 0;
 	export let itemSize: ((index: number) => number);
 	export let estimatedItemSize: number = 50;
 	export let scrollDirection: 'vertical' | 'horizontal' = 'vertical';
-	export let rtl: boolean = false;
-	export let padding: number = 0;
-
-	let updateStatePending = false;
+	export let padding: string = '0';
 
 	let rootNode: HTMLElement;
+	let resizeObserver: ResizeObserver;
+	let updateStatePending = false;
 	let scrollOffset = 0;
 	let visibleItems: { index: number; style: string }[] = [];
 	let totalSize = 0;
-
+	let paddingPx = 0;
 	let sizeCache: number[] = [];
 	let offsetCache: number[] = [0];
 	let _prevItemCount = itemCount;
@@ -73,14 +72,14 @@
 
 			let newScrollOffset = offset;
 			if (alignment === 'end') {
-				newScrollOffset = offset - containerSize + size + (2 * padding);
+				newScrollOffset = offset - containerSize + size + (2 * paddingPx);
 			} else if (alignment === 'center') {
-				newScrollOffset = offset - containerSize / 2 + size / 2 + padding;
+				newScrollOffset = offset - containerSize / 2 + size / 2 + paddingPx;
 			} else if (alignment === 'auto') {
 				if (offset < scrollOffset) {
 					newScrollOffset = offset;
-				} else if (offset + size > scrollOffset + containerSize - (2 * padding)) {
-					newScrollOffset = offset - containerSize + size + (2 * padding);
+				} else if (offset + size > scrollOffset + containerSize - (2 * paddingPx)) {
+					newScrollOffset = offset - containerSize + size + (2 * paddingPx);
 				} else {
 					newScrollOffset = scrollOffset;
 				}
@@ -88,7 +87,7 @@
 				newScrollOffset = offset;
 			}
 
-			const maxScroll = Math.max(0, totalSize - containerSize + (2 * padding));
+			const maxScroll = Math.max(0, totalSize - containerSize);
 			newScrollOffset = Math.max(0, Math.min(maxScroll, newScrollOffset));
 
 			if (behavior === 'smooth') {
@@ -107,7 +106,7 @@
 				rootNode.scrollTo({ top: newScrollOffset, left: 0, behavior });
 			}
 			else {
-				rootNode.scrollTo({ left: rtl ? -newScrollOffset : newScrollOffset, top: 0, behavior });
+				rootNode.scrollTo({ left: -newScrollOffset, top: 0, behavior });
 			}
 			scrollOffset = newScrollOffset;
 			updateState();
@@ -170,21 +169,21 @@
 			return;
 		}
 
-		totalSize = getOffset(itemCount);
+		totalSize = getOffset(itemCount) + (paddingPx * 2);
 
 		const isVertical = scrollDirection === 'vertical';
 		const containerSize = isVertical ? rootNode.clientHeight : rootNode.clientWidth;
 
-		const startIndex = Math.max(0, findNearestItem(scrollOffset) - 5);
-		const endIndex = Math.min(itemCount - 1, findNearestItem(scrollOffset + containerSize) + 5);
+		const searchOffset = Math.max(0, scrollOffset - paddingPx);
+		const startIndex = Math.max(0, findNearestItem(searchOffset) - 5);
+		const endIndex = Math.min(itemCount - 1, findNearestItem(searchOffset + containerSize) + 5);
 
 		const newVisibleItems = [];
-		const hDir = rtl ? 'right' : 'left';
 		for (let i = startIndex; i <= endIndex; i++) {
-			const offset = getOffset(i);
+			const offset = getOffset(i) + paddingPx;
 			newVisibleItems.push({
 				index: i,
-				style: `position: absolute; ${isVertical ? 'top' : hDir}: ${offset}px; ${isVertical ? 'width: 100%' : 'height: 100%'};`
+				style: `position: absolute; ${isVertical ? 'top' : 'right'}: ${offset}px; ${isVertical ? 'width: 100%' : 'height: 100%'};`
 			});
 		}
 		visibleItems = newVisibleItems;
@@ -194,7 +193,7 @@
 		if (!rootNode) return;
 		let newScrollOffset = scrollDirection === 'vertical' ? rootNode.scrollTop : rootNode.scrollLeft;
 		
-		if (scrollDirection === 'horizontal' && rtl) {
+		if (scrollDirection === 'horizontal') {
 			newScrollOffset = Math.abs(newScrollOffset);
 		}
 		
@@ -204,7 +203,6 @@
 		}
 	}
 
-	$: handlePropsChange(itemCount, scrollDirection, estimatedItemSize);
 	function handlePropsChange(
 		newCount: number,
 		newDirection: 'vertical' | 'horizontal',
@@ -244,7 +242,6 @@
 		}
 	}
 
-	let resizeObserver: ResizeObserver;
 	onMount(() => {
 		updateState();
 		
@@ -262,14 +259,26 @@
 		};
 	});
 
-	$: widthStyle = typeof width === 'number' ? `${width}px` : width;
-	$: heightStyle = typeof height === 'number' ? `${height}px` : height;
+	$: handlePropsChange(itemCount, scrollDirection, estimatedItemSize);
+
+	$: {
+		if (typeof window !== 'undefined') {
+			if (padding.endsWith('rem')) {
+		        const rem = parseFloat(padding);
+		        const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+		        paddingPx = rem * rootFontSize;
+			} else {
+		        paddingPx = parseFloat(padding) || 0;
+			}
+		}
+	    scheduleUpdateState();
+	}
 </script>
 
 <div
 	bind:this={rootNode}
 	on:scroll={handleScroll}
-	style="position: relative; overflow: auto; width: {widthStyle}; height: {heightStyle}; will-change: transform; -webkit-overflow-scrolling: touch; scrollbar-gutter: stable;"
+	style="position: relative; overflow: auto; width: {width}; height: {height}; will-change: transform; -webkit-overflow-scrolling: touch; scrollbar-gutter: stable;"
 >
 	<div style="{scrollDirection === 'vertical' ? 'min-height' : 'min-width'}: {totalSize}px; width: 100%; height: 100%; position: relative;">
 		{#each visibleItems as item (item.index)}
