@@ -1141,18 +1141,10 @@
 <style>
 	:global(.virtual-list-pad-y > div) {
 		padding-top: 2rem;
-		box-sizing: border-box;
-	}
-	:global(.virtual-list-pad-y > div > div) {
 		padding-bottom: 2rem;
-		box-sizing: content-box;
 	}
 	:global(.virtual-list-pad-x > div) {
 		padding-right: 2rem;
-		box-sizing: border-box;
-	}
-	:global(.virtual-list-pad-x > div > div) {
 		padding-left: 2rem;
-		box-sizing: content-box;
 	}
 </style>
