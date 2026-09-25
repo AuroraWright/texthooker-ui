@@ -112,6 +112,8 @@
 	let searchJumpIndex: number | undefined = undefined;
 	let measuredHeight = 0;
 	let measuredWidth = 0;
+	let prevLowerQuery = '';
+	let prevMilestoneIds = new Set<string>();
 
 	const wakeLockAvailable = 'wakeLock' in navigator;
 	const cjkCharacters = /[\p{scx=Hira}\p{scx=Kana}\p{scx=Han}]/imu;
@@ -297,7 +299,6 @@
 		});
 	}
 
-	let prevMilestoneIds = new Set<string>();
 	$: {
 		const currentMilestoneMap = $milestoneLines$;
 		const currentIds = new Set(currentMilestoneMap ? currentMilestoneMap.keys() : []);
@@ -338,8 +339,8 @@
 		}
 	}
 
-	let prevLowerQuery = '';
 	$: lowerQuery = searchQuery.trim().toLowerCase();
+
 	$: {
 		if (lowerQuery && $lineData$) {
 			if (lowerQuery !== prevLowerQuery) {
@@ -730,7 +731,7 @@
 				setTimeout(() => {
 					if (virtualListRef && $lineData$.length > 0 && !showSearch) {
 						const updatedTargetIndex = mapIndex($lineData$.length - 1);
-						virtualListRef.scrollListToIndex(updatedTargetIndex, 'auto', alignment);
+						virtualListRef.scrollListToIndex(updatedTargetIndex, 'auto', 'end');
 					}
 				}, 100);
 			}
