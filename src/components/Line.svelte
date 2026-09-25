@@ -35,7 +35,7 @@
 	$: isVerticalDisplay = !pipWindow && $displayVertical$;
 
 	onMount(() => {
-		if (isNew) {
+		if (isNew && !pipWindow) {
 			newLines.delete(line);
 		}
 	});

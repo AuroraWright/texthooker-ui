@@ -68,7 +68,6 @@
 		applyReplacements,
 		clearReplacementCaches,
 		generateRandomUUID,
-		newLineCharacter,
 		reduceToEmptyString,
 		updateScroll,
 	} from '../util';
@@ -94,7 +93,6 @@
 	let pipContainer: HTMLElement;
 	let pipWindow: Window | undefined;
 	let pipResizeTimeout: number;
-	let hasPipFocus = false;
 	let recomputePending = false;
 	let pendingInvalidations = new Set<number>();
 	let initialScrollDone = false;
@@ -653,8 +651,6 @@
 
 		pipWindow.addEventListener('pagehide', onPipHide, { once: true });
 		pipWindow.addEventListener('resize', onPipResize, false);
-		pipWindow.addEventListener('blur', onPipFocusBlur, false);
-		pipWindow.addEventListener('focus', onPipFocusBlur, false);
 
 		[...document.styleSheets].forEach((styleSheet) => {
 			if (styleSheet.ownerNode instanceof Element && styleSheet.ownerNode.id === 'user-css') {
@@ -683,10 +679,7 @@
 		updatePipDimensions();
 
 		pipWindow.removeEventListener('resize', onPipResize, false);
-		pipWindow.removeEventListener('blur', onPipFocusBlur, false);
-		pipWindow.removeEventListener('focus', onPipFocusBlur, false);
 
-		hasPipFocus = false;
 		pipWindow = undefined;
 	}
 
@@ -703,10 +696,6 @@
 
 		$lastPipHeight$ = pipWindow.document.body.clientHeight;
 		$lastPipWidth$ = pipWindow.document.body.clientWidth;
-	}
-
-	function onPipFocusBlur(event: Event) {
-		hasPipFocus = event.type === 'focus';
 	}
 
 	function onAfkBlur({ detail: isAfk }: CustomEvent<boolean>) {
