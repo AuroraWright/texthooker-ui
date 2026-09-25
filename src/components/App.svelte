@@ -88,7 +88,6 @@
 	let settingsContainer: HTMLElement;
 	let settingsElement: SVGElement;
 	let settingsOpen = false;
-	let lineContainer: HTMLElement;
 	let lineInEdit = false;
 	let blockNextExternalLine = false;
 	let wakeLock = null;
@@ -248,9 +247,7 @@
 
 	$: pipLines = pipAvailable && $lineData$ ? $lineData$.slice(-$maxPipLines$) : [];
 
-	$: estimatedItemSize = $displayVertical$ 
-		? (measuredWidth || ($fontSize$ * 1.5 + 36)) 
-		: (measuredHeight || ($fontSize$ * 1.5 + 52));
+	$: estimatedItemSize = $displayVertical$ ? measuredWidth : measuredHeight;
 
 	$: if (pipWindow) {
 		pipWindow.document.body.dataset.theme = $theme$;
@@ -1045,7 +1042,6 @@
 	style:font-size={`${$fontSize$}px`}
 	style:font-family={$onlineFont$ !== OnlineFont.OFF ? $onlineFont$ : undefined}
 	style:writing-mode={$displayVertical$ ? 'vertical-rl' : 'horizontal-tb'}
-	bind:this={lineContainer}
 >
 	<div
 		aria-hidden="true"
