@@ -339,10 +339,7 @@
 		}
 
 		dataFileInput.value = null;
-		tick().then(() => {
-			dispatch('layoutChange');
-			dispatch('dataResetOrImported');
-		});
+		dispatch('dataResetOrImported');
 	}
 
 	async function handleSettingsFileChange() {

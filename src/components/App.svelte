@@ -1020,7 +1020,10 @@
 		on:dataResetOrImported={() => {
 			lineSizes.clear();
 			virtualListRef?.clearCache();
-			tick().then(remeasureMountedLines);
+			tick().then(() => {
+				remeasureMountedLines();
+				executeUpdateScroll(true);
+			})
 		}}
 	/>
 	<Presets isQuickSwitch={true} on:layoutChange={() => executeUpdateScroll(true)} />
