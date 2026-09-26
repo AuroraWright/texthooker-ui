@@ -16,7 +16,6 @@ export function writableIDBArraySubject<T>() {
 			persistenceBehavior.subscribe((shallPersist) => (persist = shallPersist));
 		}
 
-		// Migrate legacy data from localStorage if found
 		let legacyData: T[] | undefined;
 		try {
 			const rawLegacy = window.localStorage.getItem(key);
@@ -24,12 +23,13 @@ export function writableIDBArraySubject<T>() {
 				legacyData = JSON.parse(rawLegacy) as T[];
 			}
 		} catch (_) {
-			// no-op
 		}
 
 		getIDBItem<T[]>(key)
 			.then((stored) => {
-				const dataToLoad = stored ?? legacyData;
+				const isStoredEmpty = !stored || stored.length === 0;
+				const dataToLoad = !isStoredEmpty ? stored : legacyData;
+
 				if (dataToLoad && dataToLoad.length > 0) {
 					const current = subject.getValue();
 					if (current.length === 0) {
@@ -42,7 +42,7 @@ export function writableIDBArraySubject<T>() {
 					onLoaded?.([]);
 				}
 
-				if (legacyData && !stored) {
+				if (legacyData && legacyData.length > 0 && isStoredEmpty) {
 					setIDBItem(key, legacyData).then(() => {
 						window.localStorage.removeItem(key);
 					}).catch(console.error);
@@ -98,12 +98,13 @@ export function writableIDBStringSubject() {
 				legacyData = rawLegacy;
 			}
 		} catch (_) {
-			// no-op
 		}
 
 		getIDBItem<string>(key)
 			.then((stored) => {
-				const dataToLoad = stored !== undefined ? stored : legacyData;
+				const isStoredEmpty = stored === undefined || stored === '';
+				const dataToLoad = !isStoredEmpty ? stored : legacyData;
+
 				if (dataToLoad !== undefined) {
 					const current = subject.getValue();
 					if (!current || current === defaultValue) {
@@ -126,7 +127,7 @@ export function writableIDBStringSubject() {
 			})
 			.catch((error) => {
 				console.error(`Error hydrating ${key} from IndexedDB:`, error);
-				if (legacyData !== undefined) {
+				if (legacyData !== undefined && legacyData !== '' && isStoredEmpty) {
 					const current = subject.getValue();
 					if (!current || current === defaultValue) {
 						subject.next(legacyData);
