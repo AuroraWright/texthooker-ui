@@ -22,11 +22,7 @@
 	export let isCurrentMatchLine = false;
 
 	const isNew = newLines.has(line);
-	const dispatch = createEventDispatcher<{
-		deselected: string;
-		selected: string;
-		edit: LineItemEditEvent;
-	}>();
+	const dispatch = createEventDispatcher<{ deselected: string; selected: string; edit: LineItemEditEvent }>();
 
 	let paragraph: HTMLElement;
 	let originalText = '';
@@ -156,7 +152,7 @@
 		style:padding-right={isVerticalDisplay ? `${$linePadding$}rem` : undefined}
 	>
 		<div class="flex items-center">
-			<Icon class={$displayVertical$ ? '' : 'mr-2'} path={mdiTrophy} />
+			<Icon class={$displayVertical$ ? '' : 'mr-2'} path={mdiTrophy}></Icon>
 			<span class:mt-2={$displayVertical$}>{$milestoneLines$.get(line.id)}</span>
 		</div>
 	</div>

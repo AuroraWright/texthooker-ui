@@ -127,8 +127,8 @@
 		filter(([_, lineType]) => {
 			const isPaste = lineType === LineType.PASTE;
 			const hasNoUserInteraction = !$notesOpen$ && !$dialogOpen$ && !settingsOpen && !lineInEdit;
-
 			const skipExternalLine = blockNextExternalLine && lineType === LineType.EXTERNAL;
+
 			if (skipExternalLine) {
 				blockNextExternalLine = false;
 			}
@@ -181,7 +181,7 @@
 	);
 
 	const pasteHandler$ = enablePaste$.pipe(
-		switchMap((enablePaste) => (enablePaste ? fromEvent<ClipboardEvent>(document, 'paste') : NEVER)),
+		switchMap((enablePaste) => (enablePaste ? fromEvent(document, 'paste') : NEVER)),
 		filter((event) => {
 			const target = event.target as HTMLElement;
 			return target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA' && !target.isContentEditable;
@@ -633,11 +633,7 @@
 		pipWindow = await window.documentPictureInPicture
 			.requestWindow(
 				$lastPipHeight$ > 0 && $lastPipWidth$ > 0
-					? {
-						  height: $lastPipHeight$,
-						  width: $lastPipWidth$,
-						  preferInitialWindowPlacement: false,
-					  }
+					? { height: $lastPipHeight$, width: $lastPipWidth$, preferInitialWindowPlacement: false }
 					: { preferInitialWindowPlacement: false },
 			)
 			.catch(({ message }) => {
