@@ -93,26 +93,26 @@
 	let pipContainer: HTMLElement;
 	let pipWindow: Window | undefined;
 	let pipResizeTimeout: number;
-	let recomputePending = false;
-	let pendingInvalidations = new Set<number>();
-	let initialScrollDone = false;
-	let pendingScrollTimeout: number | undefined;
-	let pendingScrollBehavior = 'auto';
-	let virtualListRef: any;
+	let virtualListComponent: VirtualList;
 	let lineSizes = new Map<string, number>();
 	let listWidth = 0;
 	let listHeight = 0;
+	let estimatedLineHeight = 0;
+	let estimatedLineWidth = 0;
 	let lastReflowDimension = 0;
+	let recomputePending = false;
+	let pendingInvalidations = new Set<number>();
+	let prevMilestoneIds = new Set<string>();
+	let initialScrollDone = false;
+	let pendingScrollTimeout: number | undefined;
+	let pendingScrollBehavior: ScrollBehavior = 'auto';
 	let showSearch = false;
-	let searchInputRef: HTMLInputElement;
+	let searchInputElement: HTMLInputElement;
 	let searchQuery = '';
+	let prevLowerQuery = '';
 	let matchIndices: number[] = [];
 	let currentMatchStep = 0;
 	let searchJumpIndex: number | undefined = undefined;
-	let measuredHeight = 0;
-	let measuredWidth = 0;
-	let prevLowerQuery = '';
-	let prevMilestoneIds = new Set<string>();
 
 	const wakeLockAvailable = 'wakeLock' in navigator;
 	const cjkCharacters = /[\p{scx=Hira}\p{scx=Kana}\p{scx=Han}]/imu;
@@ -165,7 +165,7 @@
 				currentLines.push(item);
 				$lineData$ = applyEqualLineStartMerge(currentLines);
 				if ($reverseLineOrder$) {
-					virtualListRef?.shiftIndices(1);
+					virtualListComponent?.shiftIndices(1);
 				}
 				tick().then(() => executeUpdateScroll());
 
@@ -247,7 +247,7 @@
 
 	$: pipLines = pipAvailable && $lineData$ ? $lineData$.slice(-$maxPipLines$) : [];
 
-	$: estimatedItemSize = $displayVertical$ ? measuredWidth : measuredHeight;
+	$: estimatedItemSize = $displayVertical$ ? estimatedLineWidth : estimatedLineHeight;
 
 	$: if (pipWindow) {
 		pipWindow.document.body.dataset.theme = $theme$;
@@ -266,7 +266,7 @@
 		if (currentReflowDimension !== lastReflowDimension) {
 			if (lastReflowDimension !== 0) {
 				lineSizes.clear();
-				virtualListRef?.clearCache();
+				virtualListComponent?.clearCache();
 				tick().then(remeasureMountedLines);
 			}
 			lastReflowDimension = currentReflowDimension;
@@ -286,7 +286,7 @@
 		$characterMilestone$;
 
 		lineSizes.clear();
-		virtualListRef?.clearCache();
+		virtualListComponent?.clearCache();
 		tick().then(remeasureMountedLines);
 	}
 
@@ -329,8 +329,8 @@
 				}
 			}
 
-			if (hasCachedChanges && virtualListRef) {
-				virtualListRef.invalidateItemSizes(invalidVirtualIndices);
+			if (hasCachedChanges && virtualListComponent) {
+				virtualListComponent.invalidateItemSizes(invalidVirtualIndices);
 				tick().then(remeasureMountedLines);
 			}
 		}
@@ -355,9 +355,9 @@
 
 			searchJumpIndex = matchIndices.length > 0 ? matchIndices[currentMatchStep] : undefined;
 
-			if (searchJumpIndex !== undefined && virtualListRef) {
+			if (searchJumpIndex !== undefined && virtualListComponent) {
 				const virtualTarget = mapIndex(searchJumpIndex);
-				virtualListRef.scrollListToIndex(virtualTarget, 'auto', 'center');
+				virtualListComponent.scrollListToIndex(virtualTarget, 'auto', 'center');
 			}
 		} else {
 			matchIndices = [];
@@ -393,7 +393,7 @@
 		searchJumpIndex = targetIndex;
 
 		const virtualTarget = mapIndex(targetIndex);
-		virtualListRef.scrollListToIndex(virtualTarget, 'auto', 'center');
+		virtualListComponent.scrollListToIndex(virtualTarget, 'auto', 'center');
 	}
 
 	function prevMatch() {
@@ -403,20 +403,7 @@
 		searchJumpIndex = targetIndex;
 
 		const virtualTarget = mapIndex(targetIndex);
-		virtualListRef.scrollListToIndex(virtualTarget, 'auto', 'center');
-	}
-
-	function handleGlobalKeydown(event: KeyboardEvent) {
-		if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
-			event.preventDefault();
-			showSearch = true;
-			tick().then(() => searchInputRef?.focus());
-		}
-		if (event.key === 'Escape' && showSearch) {
-			showSearch = false;
-			searchQuery = '';
-			searchJumpIndex = undefined;
-		}
+		virtualListComponent.scrollListToIndex(virtualTarget, 'auto', 'center');
 	}
 
 	function measureSize(node: HTMLElement, params: { line: LineItem; virtual: number }) {
@@ -434,8 +421,8 @@
 				if (!recomputePending) {
 					recomputePending = true;
 					tick().then(() => {
-						if (virtualListRef && pendingInvalidations.size > 0) {
-							virtualListRef.invalidateItemSizes(Array.from(pendingInvalidations));
+						if (virtualListComponent && pendingInvalidations.size > 0) {
+							virtualListComponent.invalidateItemSizes(Array.from(pendingInvalidations));
 						}
 						pendingInvalidations.clear();
 						recomputePending = false;
@@ -447,9 +434,9 @@
 					pendingScrollTimeout = window.setTimeout(() => {
 						if (document.visibilityState === 'hidden') return;
 						pendingScrollTimeout = undefined;
-						if (virtualListRef && $lineData$.length > 0 && !$reverseLineOrder$ && !showSearch) {
+						if (virtualListComponent && $lineData$.length > 0 && !$reverseLineOrder$ && !showSearch) {
 							const lastIndex = mapIndex($lineData$.length - 1);
-							virtualListRef.scrollListToIndex(lastIndex, pendingScrollBehavior, 'end');
+							virtualListComponent.scrollListToIndex(lastIndex, pendingScrollBehavior, 'end');
 						}
 					}, 100);
 				}
@@ -483,7 +470,7 @@
 	}
 
 	function remeasureMountedLines() {
-		if (!virtualListRef) return;
+		if (!virtualListComponent) return;
 		const invalidIndices: number[] = [];
 
 		for (const [id, { node, getVirtual }] of mountedNodes) {
@@ -495,11 +482,11 @@
 		}
 
 		if (invalidIndices.length > 0) {
-			virtualListRef.invalidateItemSizes(invalidIndices);
+			virtualListComponent.invalidateItemSizes(invalidIndices);
 		}
 	}
 
-	function handleKeyPress(event: KeyboardEvent) {
+	function handleKeyUp(event: KeyboardEvent) {
 		const target = event.target as HTMLElement;
 		if ($notesOpen$ || $dialogOpen$ || settingsOpen || lineInEdit || showSearch || target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable) {
 			return;
@@ -547,6 +534,19 @@
 		}
 	}
 
+	function handleKeyDown(event: KeyboardEvent) {
+		if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+			event.preventDefault();
+			showSearch = true;
+			tick().then(() => searchInputElement?.focus());
+		}
+		if (event.key === 'Escape' && showSearch) {
+			showSearch = false;
+			searchQuery = '';
+			searchJumpIndex = undefined;
+		}
+	}
+
 	async function undoLastAction() {
 		if (!$actionHistory$.length) {
 			return;
@@ -578,7 +578,7 @@
 
 		$lineData$ = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData());
 		$actionHistory$ = $actionHistory$;
-		virtualListRef?.clearCache();
+		virtualListComponent?.clearCache();
 	}
 
 	function removeLastLine() {
@@ -714,10 +714,10 @@
 
 	function executeUpdateScroll(forceInstant: boolean = false) {
 		const scrollBehavior = forceInstant !== true ? listScrollBehavior : 'auto';
-		if (virtualListRef && $lineData$.length > 0 && !showSearch) {
+		if (virtualListComponent && $lineData$.length > 0 && !showSearch) {
 			const targetIndex = mapIndex($lineData$.length - 1);
 			const alignment = $reverseLineOrder$ ? 'start' : 'end';
-			virtualListRef.scrollListToIndex(targetIndex, scrollBehavior, alignment);
+			virtualListComponent.scrollListToIndex(targetIndex, scrollBehavior, alignment);
 			pendingScrollBehavior = scrollBehavior;
 
 			if (!$reverseLineOrder$) {
@@ -814,7 +814,7 @@
 				selectedLineIds = selectedLineIds.filter((selectedLineId) => !oldLinesToRemove.has(selectedLineId));
 			}
 
-			virtualListRef?.clearCache();
+			virtualListComponent?.clearCache();
 		}
 		return $lineData$;
 	}
@@ -855,7 +855,7 @@
 				}
 
 				lineSizes.clear();
-				virtualListRef?.clearCache();
+				virtualListComponent?.clearCache();
 				$openDialog$ = { message: `Operation executed`, showCancel: false };
 			}
 		} catch ({ message }) {
@@ -899,7 +899,7 @@
 	}
 </script>
 
-<svelte:window on:keyup={handleKeyPress} on:keydown={handleGlobalKeydown} />
+<svelte:window on:keyup={handleKeyUp} on:keydown={handleKeyDown} />
 
 {$visibilityHandler$ ?? ''}
 {$handleLine$ ?? ''}
@@ -916,7 +916,7 @@
 {#if showSearch}
 <div class="fixed top-4 left-1/2 -translate-x-1/2 bg-base-200 border border-primary shadow-xl rounded-lg p-2 z-50 flex items-center gap-2" transition:fly={{ y: -20, duration: 200 }}>
 	<input 
-		bind:this={searchInputRef}
+		bind:this={searchInputElement}
 		bind:value={searchQuery}
 		type="text"
 		placeholder="Search text..."
@@ -1025,7 +1025,7 @@
 		on:linesRemoved={(event) => {event.detail.forEach(id => lineSizes.delete(id));}}
 		on:dataResetOrImported={() => {
 			lineSizes.clear();
-			virtualListRef?.clearCache();
+			virtualListComponent?.clearCache();
 			tick().then(() => {
 				remeasureMountedLines();
 				executeUpdateScroll(true);
@@ -1046,8 +1046,8 @@
 		aria-hidden="true"
 		class="absolute invisible pointer-events-none opacity-0 -z-50 flex"
 		class:flex-col={!$displayVertical$}
-		bind:offsetHeight={measuredHeight}
-		bind:offsetWidth={measuredWidth}
+		bind:offsetHeight={estimatedLineHeight}
+		bind:offsetWidth={estimatedLineWidth}
 	>
 		<p
 			class="my-2 border-2 border-transparent"
@@ -1067,7 +1067,7 @@
 		{#if listWidth && listHeight}
 			<div class="absolute inset-0">
 				<VirtualList
-					bind:this={virtualListRef}
+					bind:this={virtualListComponent}
 					width="{listWidth}px"
 					height="{listHeight}px"
 					itemCount={$lineData$.length}
