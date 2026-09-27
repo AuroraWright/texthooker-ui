@@ -447,7 +447,7 @@
 					pendingScrollTimeout = window.setTimeout(() => {
 						if (document.visibilityState === 'hidden') return;
 						pendingScrollTimeout = undefined;
-						if (virtualListRef && !$reverseLineOrder$ && !showSearch) {
+						if (virtualListRef && $lineData$.length > 0 && !$reverseLineOrder$ && !showSearch) {
 							const lastIndex = mapIndex($lineData$.length - 1);
 							virtualListRef.scrollListToIndex(lastIndex, pendingScrollBehavior, 'end');
 						}
