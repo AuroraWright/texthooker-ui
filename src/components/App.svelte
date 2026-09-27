@@ -96,6 +96,8 @@
 	let recomputePending = false;
 	let pendingInvalidations = new Set<number>();
 	let initialScrollDone = false;
+	let pendingScrollTimeout: number | undefined;
+	let pendingScrollBehavior = 'auto';
 	let virtualListRef: any;
 	let lineSizes = new Map<string, number>();
 	let listWidth = 0;
@@ -420,7 +422,6 @@
 	function measureSize(node: HTMLElement, params: { line: LineItem; virtual: number }) {
 		let { line, virtual } = params;
 		let lineId = line.id;
-		let isNewLine = newLines.has(line);
 		mountedNodes.set(lineId, { node, getVirtual: () => virtual });
 
 		const ro = new ResizeObserver(() => {
@@ -438,13 +439,19 @@
 						}
 						pendingInvalidations.clear();
 						recomputePending = false;
-
-						const targetIndex = mapIndex($lineData$.length - 1);
-						if (isNewLine && virtual === targetIndex && !$reverseLineOrder$ && !showSearch) {
-							virtualListRef.scrollListToIndex(virtual, listScrollBehavior, 'end');
-						}
-						isNewLine = false;
 					});
+				}
+
+				if (pendingScrollTimeout && !$reverseLineOrder$ && !showSearch) {
+					clearTimeout(pendingScrollTimeout);
+					pendingScrollTimeout = window.setTimeout(() => {
+						if (document.visibilityState === 'hidden') return;
+						pendingScrollTimeout = undefined;
+						if (virtualListRef && !$reverseLineOrder$ && !showSearch) {
+							const lastIndex = mapIndex($lineData$.length - 1);
+							virtualListRef.scrollListToIndex(lastIndex, pendingScrollBehavior, 'end');
+						}
+					}, 100);
 				}
 			}
 		});
@@ -460,7 +467,6 @@
 
 					line = newParams.line;
 					lineId = newLineId;
-					isNewLine = newLines.has(line);
 
 					mountedNodes.set(lineId, { node, getVirtual: () => virtual });
 				} else {
@@ -712,13 +718,13 @@
 			const targetIndex = mapIndex($lineData$.length - 1);
 			const alignment = $reverseLineOrder$ ? 'start' : 'end';
 			virtualListRef.scrollListToIndex(targetIndex, scrollBehavior, alignment);
+			pendingScrollBehavior = scrollBehavior;
 
-			if (forceInstant && !$reverseLineOrder$) {
-				setTimeout(() => {
-					if (virtualListRef && $lineData$.length > 0 && !showSearch) {
-						const updatedTargetIndex = mapIndex($lineData$.length - 1);
-						virtualListRef.scrollListToIndex(updatedTargetIndex, 'auto', 'end');
-					}
+			if (!$reverseLineOrder$) {
+				clearTimeout(pendingScrollTimeout);
+				pendingScrollTimeout = window.setTimeout(() => {
+					if (document.visibilityState === 'hidden') return;
+					pendingScrollTimeout = undefined;
 				}, 100);
 			}
 		}
