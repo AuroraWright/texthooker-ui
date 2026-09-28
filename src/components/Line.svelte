@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { mdiTrophy } from '@mdi/js';
-	import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
+	import { createEventDispatcher, onDestroy, onMount, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import {
 		displayVertical$,
@@ -9,7 +9,8 @@
 		preserveWhitespace$,
 		linePadding$,
 		showLinePoints$,
-		newLines
+		newLines,
+		pipNewLines,
 	} from '../stores/stores';
 	import type { LineItem, LineItemEditEvent } from '../types';
 	import { dummyFn, newLineCharacter } from '../util';
@@ -21,7 +22,7 @@
 	export let searchQuery = '';
 	export let isCurrentMatchLine = false;
 
-	const isNew = newLines.has(line);
+	const isNew = pipWindow ? pipNewLines.has(line) : newLines.has(line);
 	const dispatch = createEventDispatcher<{ deselected: string; selected: string; edit: LineItemEditEvent }>();
 
 	let paragraph: HTMLElement;
@@ -31,8 +32,14 @@
 	$: isVerticalDisplay = !pipWindow && $displayVertical$;
 
 	onMount(() => {
-		if (isNew && !pipWindow) {
-			newLines.delete(line);
+		if (isNew) {
+			const targetSet = pipWindow ? pipNewLines : newLines;
+			for (const addedLine of targetSet) {
+				targetSet.delete(addedLine);
+				if (addedLine === line) {
+					break;
+				}
+			}
 		}
 	});
 

@@ -308,7 +308,9 @@ export const lastPipHeight$ = writableNumberSubject()('bannou-texthooker-lastPip
 
 export const lastPipWidth$ = writableNumberSubject()('bannou-texthooker-lastPipWidth', 0);
 
-export const newLines = new WeakSet<LineItem>();
+export const newLines = new Set<LineItem>();
+
+export const pipNewLines = new Set<LineItem>();
 
 export async function resetAllData() {
 	if (!skipResetConfirmations$.getValue()) {

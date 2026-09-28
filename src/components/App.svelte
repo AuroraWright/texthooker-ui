@@ -60,6 +60,7 @@
 		theme$,
 		websocketUrl$,
 		newLines,
+		pipNewLines,
 	} from '../stores/stores';
 	import { LineType, OnlineFont, Theme, type LineItem, type LineItemEditEvent } from '../types';
 	import {
@@ -161,6 +162,9 @@
 
 				if (initialScrollDone && !$showSpinner$ && !showSearch) {
 					newLines.add(item);
+				}
+				if (pipWindow) {
+					pipNewLines.add(item);
 				}
 				currentLines.push(item);
 				$lineData$ = applyEqualLineStartMerge(currentLines);
@@ -683,6 +687,8 @@
 		pipWindow.removeEventListener('resize', onPipResize, false);
 
 		pipWindow = undefined;
+
+		pipNewLines.clear();
 	}
 
 	function onPipResize() {
