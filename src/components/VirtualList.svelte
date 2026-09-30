@@ -21,6 +21,10 @@
 	let lastLastVisibleIndex = 0;
 	let lastLastVisibleOffset = 0;
 	let lastTotalSize = 0;
+	let scrollRetryTimeout: number | undefined;
+	let targetScrollIndex: number | undefined;
+	let targetScrollBehavior: ScrollBehavior = 'auto';
+	let targetScrollAlignment: 'center' | 'end' | 'auto' = 'auto';
 	let sizeCache: number[] = [];
 	let offsetCache: number[] = [0];
 	let _prevItemCount = itemCount;
@@ -41,6 +45,16 @@
 
 		offsetCache.length = Math.min(offsetCache.length, lowestChangedIndex + 1);
 		updateState();
+
+		if (targetScrollIndex !== undefined) {
+			clearTimeout(scrollRetryTimeout);
+			scrollRetryTimeout = window.setTimeout(() => {
+				if (document.visibilityState === 'hidden') return;
+				const idx = targetScrollIndex;
+				targetScrollIndex = undefined;
+				scrollListToIndex(idx, targetScrollBehavior, targetScrollAlignment, true);
+			}, 100);
+		}
 	}
 
 	export function removeIndices(indices: number[]) {
@@ -110,9 +124,21 @@
 	export function scrollListToIndex(
 		index: number | undefined,
 		behavior: ScrollBehavior = 'auto',
-		alignment: 'start' | 'center' | 'end' | 'auto' = 'auto'
+		alignment: 'start' | 'center' | 'end' | 'auto' = 'auto',
+		isRetry: boolean = false
 	) {
 		if (index === undefined || !rootNode || itemCount === 0) return;
+
+		if (!isRetry) {
+			if (alignment !== 'start') {
+				targetScrollIndex = index;
+				targetScrollBehavior = behavior;
+				targetScrollAlignment = alignment;
+			} else {
+				targetScrollIndex = undefined;
+				clearTimeout(scrollRetryTimeout);
+			}
+		}
 
 		tick().then(() => {
 			if (itemCount === 0) return;
@@ -163,6 +189,15 @@
 
 			scrollOffset = newScrollOffset;
 			updateState();
+
+			if (!isRetry && alignment !== 'start') {
+				clearTimeout(scrollRetryTimeout);
+				scrollRetryTimeout = window.setTimeout(() => {
+					if (document.visibilityState === 'hidden') return;
+					targetScrollIndex = undefined;
+					scrollListToIndex(index, behavior, alignment, true);
+				}, 100);
+			}
 		});
 	}
 

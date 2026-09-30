@@ -105,8 +105,6 @@
 	let pendingInvalidations = new Set<number>();
 	let prevMilestoneIds = new Set<string>();
 	let initialScrollDone = false;
-	let pendingScrollTimeout: number | undefined;
-	let pendingScrollBehavior: ScrollBehavior = 'auto';
 	let showSearch = false;
 	let searchInputElement: HTMLInputElement;
 	let searchQuery = '';
@@ -432,18 +430,6 @@
 						recomputePending = false;
 					});
 				}
-
-				if (pendingScrollTimeout && !$reverseLineOrder$ && !showSearch) {
-					clearTimeout(pendingScrollTimeout);
-					pendingScrollTimeout = window.setTimeout(() => {
-						if (document.visibilityState === 'hidden') return;
-						pendingScrollTimeout = undefined;
-						if (virtualListComponent && $lineData$.length > 0 && !$reverseLineOrder$ && !showSearch) {
-							const lastIndex = mapIndex($lineData$.length - 1);
-							virtualListComponent.scrollListToIndex(lastIndex, pendingScrollBehavior, 'end');
-						}
-					}, 100);
-				}
 			}
 		});
 
@@ -594,6 +580,7 @@
 		await tick();
 		$lineData$ = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData());
 		$actionHistory$ = $actionHistory$;
+		remeasureMountedLines();
 	}
 
 	function removeLastLine() {
@@ -741,15 +728,6 @@
 			const targetIndex = mapIndex($lineData$.length - 1);
 			const alignment = $reverseLineOrder$ ? 'start' : 'end';
 			virtualListComponent.scrollListToIndex(targetIndex, scrollBehavior, alignment);
-			pendingScrollBehavior = scrollBehavior;
-
-			if (!$reverseLineOrder$) {
-				clearTimeout(pendingScrollTimeout);
-				pendingScrollTimeout = window.setTimeout(() => {
-					if (document.visibilityState === 'hidden') return;
-					pendingScrollTimeout = undefined;
-				}, 100);
-			}
 		}
 		if (pipWindow) {
 			updateScroll(pipWindow, pipContainer, $reverseLineOrder$, false, listScrollBehavior);
@@ -1055,6 +1033,7 @@
 		on:maxLinesChange={() => ($lineData$ = applyMaxLinesAndGetRemainingLineData())}
 		on:linesRemoved={(event) => {event.detail.forEach(id => lineSizes.delete(id));}}
 		on:dataResetOrImported={() => {
+			deselectLines();
 			lineSizes.clear();
 			virtualListComponent?.clearCache();
 			tick().then(() => {
