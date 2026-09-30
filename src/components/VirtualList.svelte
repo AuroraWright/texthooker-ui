@@ -16,20 +16,24 @@
 	let visibleItems: { index: number; style: string }[] = [];
 	let totalSize = 0;
 	let paddingPx = 0;
+	let lastFirstVisibleIndex = 0;
+	let lastFirstVisibleOffset = 0;
+	let lastLastVisibleIndex = 0;
+	let lastLastVisibleOffset = 0;
+	let lastTotalSize = 0;
 	let sizeCache: number[] = [];
 	let offsetCache: number[] = [0];
 	let _prevItemCount = itemCount;
 	let _prevScrollDirection = scrollDirection;
 	let _prevEstimatedItemSize = estimatedItemSize;
 
-	export function invalidateItemSizes(indices: number[]) {
+	export function invalidateIndices(indices: number[]) {
 		if (!indices || indices.length === 0) return;
+
 		let lowestChangedIndex = offsetCache.length;
 
 		for (const index of indices) {
-			if (sizeCache[index] !== undefined) {
-				sizeCache[index] = undefined;
-			}
+			sizeCache[index] = undefined;
 			if (index < lowestChangedIndex) {
 				lowestChangedIndex = index;
 			}
@@ -39,25 +43,72 @@
 		updateState();
 	}
 
+	export function removeIndices(indices: number[]) {
+		if (!indices || indices.length === 0) return;
+
+		const sortedIndices = [...indices].sort((a, b) => b - a);
+		let lowestChangedIndex = offsetCache.length;
+
+		for (const index of sortedIndices) {
+			if (index < sizeCache.length) {
+				sizeCache.splice(index, 1);
+			}
+			if (index < lowestChangedIndex) {
+				lowestChangedIndex = index;
+			}
+			if (index < lastFirstVisibleIndex) lastFirstVisibleIndex--;
+			if (index < lastLastVisibleIndex) lastLastVisibleIndex--;
+		}
+
+		offsetCache.length = Math.min(offsetCache.length, lowestChangedIndex + 1);
+		_prevItemCount -= indices.length;
+		updateState();
+	}
+
+	export function insertIndices(indices: number[]) {
+		if (!indices || indices.length === 0) return;
+
+		const sortedIndices = [...indices].sort((a, b) => a - b);
+		let lowestChangedIndex = offsetCache.length;
+
+		for (const index of sortedIndices) {
+			if (index <= sizeCache.length) {
+				sizeCache.splice(index, 0, undefined as any);
+			}
+			if (index < lowestChangedIndex) {
+				lowestChangedIndex = index;
+			}
+			if (index <= lastFirstVisibleIndex) lastFirstVisibleIndex++;
+			if (index <= lastLastVisibleIndex) lastLastVisibleIndex++;
+		}
+
+		offsetCache.length = Math.min(offsetCache.length, lowestChangedIndex + 1);
+		_prevItemCount += indices.length;
+		updateState();
+	}
+
 	export function shiftIndices(shiftAmount: number) {
 		if (!shiftAmount || shiftAmount <= 0) return;
 
 		const newEmptySlots = new Array(shiftAmount).fill(undefined);
+
 		sizeCache = [...newEmptySlots, ...sizeCache];
 		offsetCache = [0];
 		_prevItemCount += shiftAmount;
-
-		scheduleUpdateState();
+		lastFirstVisibleIndex += shiftAmount;
+		lastLastVisibleIndex += shiftAmount;
+		updateState();
 	}
 
 	export function clearCache() {
 		sizeCache = [];
 		offsetCache = [0];
+		lastTotalSize = 0;
 		updateState();
 	}
 
 	export function scrollListToIndex(
-		index: number | undefined, 
+		index: number | undefined,
 		behavior: ScrollBehavior = 'auto',
 		alignment: 'start' | 'center' | 'end' | 'auto' = 'auto'
 	) {
@@ -65,12 +116,14 @@
 
 		tick().then(() => {
 			if (itemCount === 0) return;
+
 			const validIndex = Math.max(0, Math.min(itemCount - 1, index));
 			const offset = getOffset(validIndex);
 			const size = getSize(validIndex);
 			const containerSize = scrollDirection === 'vertical' ? rootNode.clientHeight : rootNode.clientWidth;
 
 			let newScrollOffset = offset;
+
 			if (alignment === 'end') {
 				newScrollOffset = offset - containerSize + size + (2 * paddingPx);
 			} else if (alignment === 'center') {
@@ -91,7 +144,7 @@
 			newScrollOffset = Math.max(0, Math.min(maxScroll, newScrollOffset));
 
 			if (behavior === 'smooth') {
-				const threshold = Math.max(300, containerSize); 
+				const threshold = Math.max(300, containerSize);
 				const isNearStart = scrollOffset <= threshold;
 				const isNearEnd = scrollOffset >= maxScroll - threshold;
 
@@ -104,10 +157,10 @@
 
 			if (scrollDirection === 'vertical') {
 				rootNode.scrollTo({ top: newScrollOffset, left: 0, behavior });
-			}
-			else {
+			} else {
 				rootNode.scrollTo({ left: -newScrollOffset, top: 0, behavior });
 			}
+
 			scrollOffset = newScrollOffset;
 			updateState();
 		});
@@ -118,9 +171,9 @@
 
 		let size = estimatedItemSize;
 		let isMeasured = false;
-
 		const val = itemSize(index);
-		if (val !== undefined && val > 0) { 
+
+		if (val !== undefined && val > 0) {
 			size = val;
 			isMeasured = true;
 		}
@@ -134,31 +187,37 @@
 
 	function getOffset(index: number) {
 		if (offsetCache[index] !== undefined) return offsetCache[index];
+
 		let lastCalculatedIndex = offsetCache.length - 1;
 		let offset = offsetCache[lastCalculatedIndex];
+
 		for (let i = lastCalculatedIndex; i < index; i++) {
 			offset += getSize(i);
 			offsetCache[i + 1] = offset;
 		}
+
 		return offset;
 	}
 
 	function findNearestItem(offset: number) {
 		let low = 0;
 		let high = Math.max(0, itemCount - 1);
+
 		while (low <= high) {
 			const mid = Math.floor((low + high) / 2);
-			const currentOffset = offsetCache[mid] !== undefined 
-				? offsetCache[mid] 
+			const currentOffset = offsetCache[mid] !== undefined
+				? offsetCache[mid]
 				: mid * estimatedItemSize;
 
 			if (currentOffset === offset) return mid;
+
 			if (currentOffset < offset) {
 				low = mid + 1;
 			} else {
 				high = mid - 1;
 			}
 		}
+
 		return Math.max(0, low - 1);
 	}
 
@@ -166,13 +225,45 @@
 		if (!rootNode || itemCount === 0) {
 			visibleItems = [];
 			totalSize = 0;
+			lastTotalSize = 0;
 			return;
 		}
 
-		totalSize = getOffset(itemCount) + (paddingPx * 2);
-
 		const isVertical = scrollDirection === 'vertical';
 		const containerSize = isVertical ? rootNode.clientHeight : rootNode.clientWidth;
+
+		const newTotalSize = getOffset(itemCount) + (paddingPx * 2);
+
+		let pendingScrollOffset = scrollOffset;
+
+		if (lastTotalSize > 0 && newTotalSize !== lastTotalSize) {
+			const safeFirstIndex = Math.max(0, Math.min(itemCount - 1, lastFirstVisibleIndex));
+			const newFirstVisibleOffset = getOffset(safeFirstIndex);
+			const diffTop = newFirstVisibleOffset - lastFirstVisibleOffset;
+
+			if (diffTop !== 0) {
+				const safeLastIndex = Math.max(0, Math.min(itemCount - 1, lastLastVisibleIndex));
+				const newLastVisibleOffset = getOffset(safeLastIndex);
+				const diffBottom = newLastVisibleOffset - lastLastVisibleOffset;
+
+				pendingScrollOffset = scrollOffset + diffBottom;
+
+				const maxScroll = Math.max(0, newTotalSize - containerSize);
+				pendingScrollOffset = Math.max(0, Math.min(maxScroll, pendingScrollOffset));
+			}
+		}
+
+		if (pendingScrollOffset !== scrollOffset) {
+			scrollOffset = pendingScrollOffset;
+			tick().then(() => {
+				if (rootNode) {
+					if (isVertical) rootNode.scrollTop = scrollOffset;
+					else rootNode.scrollLeft = -scrollOffset;
+				}
+			});
+		}
+
+		totalSize = newTotalSize;
 
 		const searchOffset = Math.max(0, scrollOffset - paddingPx);
 		const startIndex = Math.max(0, findNearestItem(searchOffset) - 5);
@@ -187,6 +278,12 @@
 			});
 		}
 		visibleItems = newVisibleItems;
+
+		lastFirstVisibleIndex = findNearestItem(scrollOffset);
+		lastFirstVisibleOffset = getOffset(lastFirstVisibleIndex);
+		lastLastVisibleIndex = findNearestItem(scrollOffset + containerSize);
+		lastLastVisibleOffset = getOffset(lastLastVisibleIndex);
+		lastTotalSize = totalSize;
 	}
 
 	function handleScroll() {

@@ -167,10 +167,10 @@
 					pipNewLines.add(item);
 				}
 				currentLines.push(item);
-				$lineData$ = applyEqualLineStartMerge(currentLines);
 				if ($reverseLineOrder$) {
 					virtualListComponent?.shiftIndices(1);
 				}
+				$lineData$ = applyEqualLineStartMerge(currentLines);
 				tick().then(() => executeUpdateScroll());
 
 				if (
@@ -334,7 +334,7 @@
 			}
 
 			if (hasCachedChanges && virtualListComponent) {
-				virtualListComponent.invalidateItemSizes(invalidVirtualIndices);
+				virtualListComponent.invalidateIndices(invalidVirtualIndices);
 				tick().then(remeasureMountedLines);
 			}
 		}
@@ -426,7 +426,7 @@
 					recomputePending = true;
 					tick().then(() => {
 						if (virtualListComponent && pendingInvalidations.size > 0) {
-							virtualListComponent.invalidateItemSizes(Array.from(pendingInvalidations));
+							virtualListComponent.invalidateIndices(Array.from(pendingInvalidations));
 						}
 						pendingInvalidations.clear();
 						recomputePending = false;
@@ -486,7 +486,7 @@
 		}
 
 		if (invalidIndices.length > 0) {
-			virtualListComponent.invalidateItemSizes(invalidIndices);
+			virtualListComponent.invalidateIndices(invalidIndices);
 		}
 	}
 
@@ -557,8 +557,8 @@
 		}
 
 		const linesToRevert = $actionHistory$.pop();
-
 		let lineToRevert = linesToRevert.pop();
+		const restoredIds = new Set<string>();
 
 		while (lineToRevert) {
 			const text = transformLine(lineToRevert.text, false);
@@ -568,21 +568,32 @@
 
 				if (index > $lineData$.length - 1) {
 					$lineData$.push({ id, text });
+					restoredIds.add(id);
 				} else if ($lineData$[index].id === id) {
 					$lineData$[index] = { id, text };
 				} else {
 					$lineData$.splice(index, 0, { id, text });
+					restoredIds.add(id);
 				}
 			}
 
 			lineToRevert = linesToRevert.pop();
 		}
 
-		await tick();
+		if (virtualListComponent && restoredIds.size > 0) {
+			const addedActualIndices: number[] = [];
+			for (let i = 0; i < $lineData$.length; i++) {
+				if (restoredIds.has($lineData$[i].id)) {
+					addedActualIndices.push(i);
+				}
+			}
+			const virtualAddedIndices = addedActualIndices.map(mapIndex);
+			virtualListComponent.insertIndices(virtualAddedIndices);
+		}
 
+		await tick();
 		$lineData$ = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData());
 		$actionHistory$ = $actionHistory$;
-		virtualListComponent?.clearCache();
 	}
 
 	function removeLastLine() {
@@ -590,9 +601,14 @@
 			return;
 		}
 
-		const [removedLine] = $lineData$.splice($lineData$.length - 1, 1);
+		const removedActualIndex = $lineData$.length - 1;
+		const virtualIndexToRemove = mapIndex(removedActualIndex);
 
+		const [removedLine] = $lineData$.splice(removedActualIndex, 1);
 		selectedLineIds = selectedLineIds.filter((selectedLineId) => selectedLineId !== removedLine.id);
+
+		virtualListComponent?.removeIndices([virtualIndexToRemove]);
+
 		$lineData$ = $lineData$;
 		$actionHistory$ = [...$actionHistory$, [{ ...removedLine, index: $lineData$.length }]];
 
@@ -603,6 +619,7 @@
 	function removeLines() {
 		const linesToDelete = new Set(selectedLineIds);
 		const newActionHistory: LineItem[] = [];
+		const virtualIndicesToRemove: number[] = [];
 
 		$lineData$ = $lineData$.filter((oldLine, index) => {
 			const hasLine = linesToDelete.has(oldLine.id);
@@ -613,9 +630,11 @@
 				lineSizes.delete(oldLine.id);
 				newActionHistory.push({ ...oldLine, index: index - newActionHistory.length });
 				$uniqueLines$.delete(oldLine.text);
+				virtualIndicesToRemove.push(mapIndex(index));
+				return false;
 			}
 
-			return !hasLine;
+			return true;
 		});
 
 		selectedLineIds = linesToDelete.size ? [...linesToDelete] : [];
@@ -623,6 +642,8 @@
 		if (newActionHistory.length) {
 			$actionHistory$ = [...$actionHistory$, newActionHistory];
 		}
+
+		virtualListComponent?.removeIndices(virtualIndicesToRemove);
 	}
 
 	function deselectLines() {
@@ -806,6 +827,12 @@
 		const startIndex = $maxLines$ ? $lineData$.length - $maxLines$ + diffMod : 0;
 		if (startIndex > 0) {
 			const oldLinesToRemove = new Set<string>();
+			const virtualIndicesToRemove: number[] = [];
+
+			for (let i = 0; i < startIndex; i++) {
+				virtualIndicesToRemove.push(mapIndex(i));
+			}
+
 			const removed = $lineData$.splice(0, startIndex);
 			for (let i = 0; i < removed.length; i++) {
 				oldLinesToRemove.add(removed[i].id);
@@ -814,9 +841,8 @@
 			}
 			if (oldLinesToRemove.size) {
 				selectedLineIds = selectedLineIds.filter((selectedLineId) => !oldLinesToRemove.has(selectedLineId));
+				virtualListComponent?.removeIndices(virtualIndicesToRemove);
 			}
-
-			virtualListComponent?.clearCache();
 		}
 		return $lineData$;
 	}
@@ -828,6 +854,7 @@
 		try {
 			let hasChanges = false;
 			const linesToRemove = new Set<string>();
+			const virtualIndicesToRemove: number[] = [];
 			const CHUNK_SIZE = 100;
 
 			for (let index = 0; index < $lineData$.length; index++) {
@@ -837,6 +864,8 @@
 				if (!newText) {
 					linesToRemove.add(line.id);
 					$uniqueLines$.delete(line.text);
+					lineSizes.delete(line.id);
+					virtualIndicesToRemove.push(mapIndex(index));
 					hasChanges = true;
 				} else if (newText !== line.text) {
 					$uniqueLines$.delete(line.text);
@@ -844,7 +873,6 @@
 					$lineData$[index] = { ...line, text: newText };
 					hasChanges = true;
 				}
-
 				if (index > 0 && index % CHUNK_SIZE === 0) {
 					await new Promise(resolve => setTimeout(resolve, 0));
 				}
@@ -854,10 +882,9 @@
 				if (linesToRemove.size > 0) {
 					$lineData$ = $lineData$.filter(line => !linesToRemove.has(line.id));
 					selectedLineIds = selectedLineIds.filter(id => !linesToRemove.has(id));
+					virtualListComponent?.removeIndices(virtualIndicesToRemove);
 				}
 
-				lineSizes.clear();
-				virtualListComponent?.clearCache();
 				$openDialog$ = { message: `Operation executed`, showCancel: false };
 			}
 		} catch ({ message }) {
@@ -894,7 +921,9 @@
 			);
 
 			lineSizes.delete(currentLineData[comparisonIndex].id);
+			const virtualIndexToRemove = mapIndex(comparisonIndex);
 			currentLineData.splice(comparisonIndex, 2, lastLine);
+			virtualListComponent?.removeIndices([virtualIndexToRemove]);
 		}
 
 		return currentLineData;
