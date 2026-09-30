@@ -46,13 +46,12 @@
 		offsetCache.length = Math.min(offsetCache.length, lowestChangedIndex + 1);
 		updateState();
 
-		if (targetScrollIndex !== undefined) {
+		if (scrollRetryTimeout !== undefined) {
 			clearTimeout(scrollRetryTimeout);
 			scrollRetryTimeout = window.setTimeout(() => {
 				if (document.visibilityState === 'hidden') return;
-				const idx = targetScrollIndex;
-				targetScrollIndex = undefined;
-				scrollListToIndex(idx, targetScrollBehavior, targetScrollAlignment, true);
+				scrollRetryTimeout = undefined;
+				scrollListToIndex(targetScrollIndex, targetScrollBehavior, targetScrollAlignment, true);
 			}, 100);
 		}
 	}
@@ -130,14 +129,8 @@
 		if (index === undefined || !rootNode || itemCount === 0) return;
 
 		if (!isRetry) {
-			if (alignment !== 'start') {
-				targetScrollIndex = index;
-				targetScrollBehavior = behavior;
-				targetScrollAlignment = alignment;
-			} else {
-				targetScrollIndex = undefined;
-				clearTimeout(scrollRetryTimeout);
-			}
+			clearTimeout(scrollRetryTimeout);
+			scrollRetryTimeout = undefined;
 		}
 
 		tick().then(() => {
@@ -192,10 +185,12 @@
 
 			if (!isRetry && alignment !== 'start') {
 				clearTimeout(scrollRetryTimeout);
+				targetScrollIndex = index;
+				targetScrollBehavior = behavior;
+				targetScrollAlignment = alignment;
 				scrollRetryTimeout = window.setTimeout(() => {
 					if (document.visibilityState === 'hidden') return;
-					targetScrollIndex = undefined;
-					scrollListToIndex(index, behavior, alignment, true);
+					scrollRetryTimeout = undefined;
 				}, 100);
 			}
 		});
