@@ -183,7 +183,7 @@
 			scrollOffset = newScrollOffset;
 			updateState();
 
-			if (!isRetry && alignment !== 'start') {
+			if (!isRetry) {
 				clearTimeout(scrollRetryTimeout);
 				targetScrollIndex = index;
 				targetScrollBehavior = behavior;
