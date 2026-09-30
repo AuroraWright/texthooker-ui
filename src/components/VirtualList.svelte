@@ -21,10 +21,8 @@
 	let lastLastVisibleIndex = 0;
 	let lastLastVisibleOffset = 0;
 	let lastTotalSize = 0;
-	let scrollRetryTimeout: number | undefined;
-	let targetScrollIndex: number | undefined;
-	let targetScrollBehavior: ScrollBehavior = 'auto';
-	let targetScrollAlignment: 'center' | 'end' | 'auto' = 'auto';
+	let activeScrollTarget: { index: number, alignment: 'start' | 'center' | 'end' | 'auto', behavior: ScrollBehavior } | undefined = undefined;
+	let scrollTargetTimeout: number;
 	let sizeCache: number[] = [];
 	let offsetCache: number[] = [0];
 	let _prevItemCount = itemCount;
@@ -45,15 +43,6 @@
 
 		offsetCache.length = Math.min(offsetCache.length, lowestChangedIndex + 1);
 		updateState();
-
-		if (scrollRetryTimeout !== undefined) {
-			clearTimeout(scrollRetryTimeout);
-			scrollRetryTimeout = window.setTimeout(() => {
-				if (document.visibilityState === 'hidden') return;
-				scrollRetryTimeout = undefined;
-				scrollListToIndex(targetScrollIndex, targetScrollBehavior, targetScrollAlignment, true);
-			}, 100);
-		}
 	}
 
 	export function removeIndices(indices: number[]) {
@@ -123,77 +112,11 @@
 	export function scrollListToIndex(
 		index: number | undefined,
 		behavior: ScrollBehavior = 'auto',
-		alignment: 'start' | 'center' | 'end' | 'auto' = 'auto',
-		isRetry: boolean = false
+		alignment: 'start' | 'center' | 'end' | 'auto' = 'auto'
 	) {
 		if (index === undefined || !rootNode || itemCount === 0) return;
-
-		if (!isRetry) {
-			clearTimeout(scrollRetryTimeout);
-			scrollRetryTimeout = undefined;
-		}
-
-		tick().then(() => {
-			if (itemCount === 0) return;
-
-			const validIndex = Math.max(0, Math.min(itemCount - 1, index));
-			const offset = getOffset(validIndex);
-			const size = getSize(validIndex);
-			const containerSize = scrollDirection === 'vertical' ? rootNode.clientHeight : rootNode.clientWidth;
-
-			let newScrollOffset = offset;
-
-			if (alignment === 'end') {
-				newScrollOffset = offset - containerSize + size + (2 * paddingPx);
-			} else if (alignment === 'center') {
-				newScrollOffset = offset - containerSize / 2 + size / 2 + paddingPx;
-			} else if (alignment === 'auto') {
-				if (offset < scrollOffset) {
-					newScrollOffset = offset;
-				} else if (offset + size > scrollOffset + containerSize - (2 * paddingPx)) {
-					newScrollOffset = offset - containerSize + size + (2 * paddingPx);
-				} else {
-					newScrollOffset = scrollOffset;
-				}
-			} else {
-				newScrollOffset = offset;
-			}
-
-			const maxScroll = Math.max(0, totalSize - containerSize);
-			newScrollOffset = Math.max(0, Math.min(maxScroll, newScrollOffset));
-
-			if (behavior === 'smooth') {
-				const threshold = Math.max(300, containerSize);
-				const isNearStart = scrollOffset <= threshold;
-				const isNearEnd = scrollOffset >= maxScroll - threshold;
-
-				if (alignment === 'end' && !isNearEnd) {
-					behavior = 'auto';
-				} else if (alignment === 'start' && !isNearStart) {
-					behavior = 'auto';
-				}
-			}
-
-			if (scrollDirection === 'vertical') {
-				rootNode.scrollTo({ top: newScrollOffset, left: 0, behavior });
-			} else {
-				rootNode.scrollTo({ left: -newScrollOffset, top: 0, behavior });
-			}
-
-			scrollOffset = newScrollOffset;
-			updateState();
-
-			if (!isRetry) {
-				clearTimeout(scrollRetryTimeout);
-				targetScrollIndex = index;
-				targetScrollBehavior = behavior;
-				targetScrollAlignment = alignment;
-				scrollRetryTimeout = window.setTimeout(() => {
-					if (document.visibilityState === 'hidden') return;
-					scrollRetryTimeout = undefined;
-				}, 100);
-			}
-		});
+		activeScrollTarget = { index, alignment, behavior };
+		scheduleUpdateState();
 	}
 
 	function getSize(index: number) {
@@ -261,12 +184,52 @@
 
 		const isVertical = scrollDirection === 'vertical';
 		const containerSize = isVertical ? rootNode.clientHeight : rootNode.clientWidth;
-
 		const newTotalSize = getOffset(itemCount) + (paddingPx * 2);
 
 		let pendingScrollOffset = scrollOffset;
+		let pendingBehavior: ScrollBehavior = 'auto';
 
-		if (lastTotalSize > 0 && newTotalSize !== lastTotalSize) {
+		if (activeScrollTarget) {
+			const validIndex = Math.max(0, Math.min(itemCount - 1, activeScrollTarget.index));
+			const offset = getOffset(validIndex);
+			const size = getSize(validIndex);
+
+			if (activeScrollTarget.alignment === 'end') {
+				pendingScrollOffset = offset - containerSize + size + (2 * paddingPx);
+			} else if (activeScrollTarget.alignment === 'center') {
+				pendingScrollOffset = offset - containerSize / 2 + size / 2 + paddingPx;
+			} else if (activeScrollTarget.alignment === 'auto') {
+				if (offset < scrollOffset) {
+					pendingScrollOffset = offset;
+				} else if (offset + size > scrollOffset + containerSize - (2 * paddingPx)) {
+					pendingScrollOffset = offset - containerSize + size + (2 * paddingPx);
+				} else {
+					pendingScrollOffset = scrollOffset;
+				}
+			} else {
+				pendingScrollOffset = offset;
+			}
+
+			const maxScroll = Math.max(0, newTotalSize - containerSize);
+			pendingScrollOffset = Math.max(0, Math.min(maxScroll, pendingScrollOffset));
+
+			pendingBehavior = activeScrollTarget.behavior;
+			if (pendingBehavior === 'smooth') {
+				const threshold = Math.max(300, containerSize);
+				const isNearStart = scrollOffset <= threshold;
+				const isNearEnd = scrollOffset >= maxScroll - threshold;
+				if (activeScrollTarget.alignment === 'end' && !isNearEnd) {
+					pendingBehavior = 'auto';
+				} else if (activeScrollTarget.alignment === 'start' && !isNearStart) {
+					pendingBehavior = 'auto';
+				}
+			}
+
+			if (document.visibilityState !== 'hidden') {
+				clearTimeout(scrollTargetTimeout);
+				scrollTargetTimeout = window.setTimeout(resetScrollTarget, 100);
+			}
+		} else if (lastTotalSize > 0 && newTotalSize !== lastTotalSize) {
 			const safeFirstIndex = Math.max(0, Math.min(itemCount - 1, lastFirstVisibleIndex));
 			const newFirstVisibleOffset = getOffset(safeFirstIndex);
 			const diffTop = newFirstVisibleOffset - lastFirstVisibleOffset;
@@ -275,20 +238,22 @@
 				const safeLastIndex = Math.max(0, Math.min(itemCount - 1, lastLastVisibleIndex));
 				const newLastVisibleOffset = getOffset(safeLastIndex);
 				const diffBottom = newLastVisibleOffset - lastLastVisibleOffset;
-
 				pendingScrollOffset = scrollOffset + diffBottom;
-
-				const maxScroll = Math.max(0, newTotalSize - containerSize);
-				pendingScrollOffset = Math.max(0, Math.min(maxScroll, pendingScrollOffset));
 			}
+
+			const maxScroll = Math.max(0, newTotalSize - containerSize);
+			pendingScrollOffset = Math.max(0, Math.min(maxScroll, pendingScrollOffset));
 		}
 
 		if (pendingScrollOffset !== scrollOffset) {
 			scrollOffset = pendingScrollOffset;
 			tick().then(() => {
 				if (rootNode) {
-					if (isVertical) rootNode.scrollTop = scrollOffset;
-					else rootNode.scrollLeft = -scrollOffset;
+					if (scrollDirection === 'vertical') {
+						rootNode.scrollTo({ top: scrollOffset, left: 0, behavior: pendingBehavior });
+					} else {
+						rootNode.scrollTo({ left: -scrollOffset, top: 0, behavior: pendingBehavior });
+					}
 				}
 			});
 		}
@@ -328,6 +293,11 @@
 			scrollOffset = newScrollOffset;
 			updateState();
 		}
+	}
+
+	function resetScrollTarget() {
+		activeScrollTarget = undefined;
+		scrollTargetTimeout = undefined;
 	}
 
 	function handlePropsChange(
@@ -403,6 +373,8 @@
 <div
 	bind:this={rootNode}
 	on:scroll={handleScroll}
+	on:wheel={resetScrollTarget}
+	on:pointerdown={resetScrollTarget}
 	style="position: relative; overflow: auto; width: {width}; height: {height}; will-change: transform; -webkit-overflow-scrolling: touch; scrollbar-gutter: stable;"
 >
 	<div style="{scrollDirection === 'vertical' ? 'min-height' : 'min-width'}: {totalSize}px; width: 100%; height: 100%; position: relative;">
