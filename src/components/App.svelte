@@ -580,7 +580,10 @@
 		await tick();
 		$lineData$ = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData());
 		$actionHistory$ = $actionHistory$;
-		remeasureMountedLines();
+
+		if (restoredIds.size > 0) {
+			remeasureMountedLines();
+		}
 	}
 
 	function removeLastLine() {
