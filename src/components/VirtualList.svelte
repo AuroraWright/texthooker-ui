@@ -1,33 +1,51 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+
 	import { onMount, tick } from 'svelte';
 
-	export let width: string = '100%';
-	export let height: string = '100%';
-	export let itemCount: number = 0;
-	export let itemSize: ((index: number) => number);
-	export let estimatedItemSize: number = 50;
-	export let scrollDirection: 'vertical' | 'horizontal' = 'vertical';
-	export let padding: string = '0';
+	interface Props {
+		width?: string;
+		height?: string;
+		itemCount?: number;
+		itemSize: (index: number) => number;
+		estimatedItemSize?: number;
+		scrollDirection?: 'vertical' | 'horizontal';
+		padding?: string;
+		item?: import('svelte').Snippet<[{ index: number; style: string }]>;
+	}
 
-	let rootNode: HTMLElement;
+	let {
+		width = '100%',
+		height = '100%',
+		itemCount = 0,
+		itemSize,
+		estimatedItemSize = 50,
+		scrollDirection = 'vertical',
+		padding = '0',
+		item,
+	}: Props = $props();
+
+	let rootNode: HTMLElement = $state();
 	let resizeObserver: ResizeObserver;
 	let updateStatePending = false;
 	let scrollOffset = 0;
-	let visibleItems: { index: number; style: string }[] = [];
-	let totalSize = 0;
-	let paddingPx = 0;
+	let visibleItems: { index: number; style: string }[] = $state([]);
+	let totalSize = $state(0);
+	let paddingPx = $state(0);
 	let lastFirstVisibleIndex = 0;
 	let lastFirstVisibleOffset = 0;
 	let lastLastVisibleIndex = 0;
 	let lastLastVisibleOffset = 0;
 	let lastTotalSize = 0;
-	let activeScrollTarget: { index: number, alignment: 'start' | 'center' | 'end' | 'auto', behavior: ScrollBehavior } | undefined = undefined;
+	let activeScrollTarget:
+		{ index: number; alignment: 'start' | 'center' | 'end' | 'auto'; behavior: ScrollBehavior } | undefined =
+		undefined;
 	let scrollTargetTimeout: number;
 	let sizeCache: number[] = [];
 	let offsetCache: number[] = [0];
-	let _prevItemCount = itemCount;
-	let _prevScrollDirection = scrollDirection;
-	let _prevEstimatedItemSize = estimatedItemSize;
+	let _prevItemCount = untrack(() => itemCount);
+	let _prevScrollDirection = untrack(() => scrollDirection);
+	let _prevEstimatedItemSize = untrack(() => estimatedItemSize);
 
 	export function invalidateIndices(indices: number[]) {
 		if (!indices || indices.length === 0) return;
@@ -112,7 +130,7 @@
 	export function scrollListToIndex(
 		index: number | undefined,
 		behavior: ScrollBehavior = 'auto',
-		alignment: 'start' | 'center' | 'end' | 'auto' = 'auto'
+		alignment: 'start' | 'center' | 'end' | 'auto' = 'auto',
 	) {
 		if (index === undefined || !rootNode || itemCount === 0) return;
 		activeScrollTarget = { index, alignment, behavior };
@@ -122,7 +140,7 @@
 	function getSize(index: number) {
 		if (sizeCache[index] !== undefined) return sizeCache[index];
 
-		let size = estimatedItemSize;
+		let size = untrack(() => estimatedItemSize);
 		let isMeasured = false;
 		const val = itemSize(index);
 
@@ -158,9 +176,7 @@
 
 		while (low <= high) {
 			const mid = Math.floor((low + high) / 2);
-			const currentOffset = offsetCache[mid] !== undefined
-				? offsetCache[mid]
-				: mid * estimatedItemSize;
+			const currentOffset = offsetCache[mid] !== undefined ? offsetCache[mid] : mid * estimatedItemSize;
 
 			if (currentOffset === offset) return mid;
 
@@ -184,7 +200,7 @@
 
 		const isVertical = scrollDirection === 'vertical';
 		const containerSize = isVertical ? rootNode.clientHeight : rootNode.clientWidth;
-		const newTotalSize = getOffset(itemCount) + (paddingPx * 2);
+		const newTotalSize = getOffset(itemCount) + paddingPx * 2;
 
 		let pendingScrollOffset = scrollOffset;
 		let pendingBehavior: ScrollBehavior = 'auto';
@@ -195,14 +211,14 @@
 			const size = getSize(validIndex);
 
 			if (activeScrollTarget.alignment === 'end') {
-				pendingScrollOffset = offset - containerSize + size + (2 * paddingPx);
+				pendingScrollOffset = offset - containerSize + size + 2 * paddingPx;
 			} else if (activeScrollTarget.alignment === 'center') {
 				pendingScrollOffset = offset - containerSize / 2 + size / 2 + paddingPx;
 			} else if (activeScrollTarget.alignment === 'auto') {
 				if (offset < scrollOffset) {
 					pendingScrollOffset = offset;
-				} else if (offset + size > scrollOffset + containerSize - (2 * paddingPx)) {
-					pendingScrollOffset = offset - containerSize + size + (2 * paddingPx);
+				} else if (offset + size > scrollOffset + containerSize - 2 * paddingPx) {
+					pendingScrollOffset = offset - containerSize + size + 2 * paddingPx;
 				} else {
 					pendingScrollOffset = scrollOffset;
 				}
@@ -269,7 +285,7 @@
 			const offset = getOffset(i) + paddingPx;
 			newVisibleItems.push({
 				index: i,
-				style: `position: absolute; ${isVertical ? 'top' : 'right'}: ${offset}px; ${isVertical ? 'width: 100%' : 'height: 100%'};`
+				style: `position: absolute; ${isVertical ? 'top' : 'right'}: ${offset}px; ${isVertical ? 'width: 100%' : 'height: 100%'};`,
 			});
 		}
 		visibleItems = newVisibleItems;
@@ -300,11 +316,7 @@
 		scrollTargetTimeout = undefined;
 	}
 
-	function handlePropsChange(
-		newCount: number,
-		newDirection: 'vertical' | 'horizontal',
-		newEstimatedSize: number
-	) {
+	function handlePropsChange(newCount: number, newDirection: 'vertical' | 'horizontal', newEstimatedSize: number) {
 		const directionChanged = newDirection !== _prevScrollDirection;
 		const sizeChanged = newEstimatedSize !== _prevEstimatedItemSize;
 		const hasDecreased = newCount < _prevItemCount;
@@ -350,36 +362,51 @@
 		}
 
 		return () => {
+			clearTimeout(scrollTargetTimeout);
 			if (resizeObserver) {
 				resizeObserver.disconnect();
 			}
 		};
 	});
 
-	$: handlePropsChange(itemCount, scrollDirection, estimatedItemSize);
+	$effect(() => {
+		void [itemCount, scrollDirection, estimatedItemSize];
+		untrack(() => {
+			handlePropsChange(itemCount, scrollDirection, estimatedItemSize);
+		});
+	});
 
-	$: {
-		if (padding.endsWith('rem')) {
-			const rem = parseFloat(padding);
-			const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-			paddingPx = rem * rootFontSize;
-		} else {
-			paddingPx = parseFloat(padding) || 0;
-		}
-		scheduleUpdateState();
-	}
+	$effect(() => {
+		void [padding];
+		untrack(() => {
+			if (padding.endsWith('rem')) {
+				const rem = parseFloat(padding);
+				const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+				paddingPx = rem * rootFontSize;
+			} else {
+				paddingPx = parseFloat(padding) || 0;
+			}
+			scheduleUpdateState();
+		});
+	});
 </script>
 
 <div
+	role="region"
+	aria-label="Text history"
 	bind:this={rootNode}
-	on:scroll={handleScroll}
-	on:wheel={resetScrollTarget}
-	on:pointerdown={resetScrollTarget}
+	onscroll={handleScroll}
+	onwheel={resetScrollTarget}
+	onpointerdown={resetScrollTarget}
 	style="position: relative; overflow: auto; width: {width}; height: {height}; will-change: transform; -webkit-overflow-scrolling: touch; scrollbar-gutter: stable;"
 >
-	<div style="{scrollDirection === 'vertical' ? 'min-height' : 'min-width'}: {totalSize}px; width: 100%; height: 100%; position: relative;">
-		{#each visibleItems as item (item.index)}
-			<slot name="item" index={item.index} style={item.style} />
+	<div
+		style="{scrollDirection === 'vertical'
+			? 'min-height'
+			: 'min-width'}: {totalSize}px; width: 100%; height: 100%; position: relative;"
+	>
+		{#each visibleItems as visibleItem (visibleItem.index)}
+			{@render item?.({ index: visibleItem.index, style: visibleItem.style })}
 		{/each}
 	</div>
 </div>

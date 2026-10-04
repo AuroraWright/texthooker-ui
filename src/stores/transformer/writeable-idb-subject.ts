@@ -117,7 +117,7 @@ export function writableIDBStringSubject() {
 					onLoaded?.(defaultValue);
 				}
 
-				if (legacyData !== undefined && stored === undefined) {
+				if (legacyData !== undefined && isStoredEmpty) {
 					setIDBItem(key, legacyData).then(() => {
 						window.localStorage.removeItem(key);
 					}).catch(console.error);
@@ -127,7 +127,7 @@ export function writableIDBStringSubject() {
 			})
 			.catch((error) => {
 				console.error(`Error hydrating ${key} from IndexedDB:`, error);
-				if (legacyData !== undefined && legacyData !== '' && isStoredEmpty) {
+				if (legacyData !== undefined && legacyData !== '') {
 					const current = subject.getValue();
 					if (!current || current === defaultValue) {
 						subject.next(legacyData);

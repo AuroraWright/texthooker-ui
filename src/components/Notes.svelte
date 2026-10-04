@@ -10,10 +10,13 @@
 </script>
 
 <div class="flex justify-end p-4">
+	<!-- svelte-ignore a11y_interactive_supports_focus -->
 	<div
+		role="button"
+		aria-label="Close notes"
 		class="flex cursor-pointer items-end md:items-center"
-		on:click={() => ($notesOpen$ = false)}
-		on:keyup={dummyFn}
+		onclick={() => ($notesOpen$ = false)}
+		onkeyup={dummyFn}
 	>
 		<Icon path={mdiClose} />
 	</div>
@@ -22,5 +25,5 @@
 	class="flex-1 overflow-auto ml-10 mr-2 mb-4 p-1 pb-2"
 	style="resize: none;"
 	value={$userNotes$}
-	on:blur={handleBlur}
-/>
+	onblur={handleBlur}
+></textarea>

@@ -1,4 +1,10 @@
 <script lang="ts">
+	interface Props {
+		onapplyReplacements?: () => void;
+	}
+	let { onapplyReplacements }: Props = $props();
+	import { untrack } from 'svelte';
+
 	import { mdiPlus } from '@mdi/js';
 	import { replacements$ } from '../stores/stores';
 	import type { ReplacementItem } from '../types';
@@ -6,17 +12,20 @@
 	import ReplacementSettingsInput from './ReplacementSettingsInput.svelte';
 	import ReplacementSettingsList from './ReplacementSettingsList.svelte';
 
-	let inEditMode = false;
+	let inEditMode = $state(false);
 
-	let currentReplacement: ReplacementItem | undefined;
-
-	$: hasReplacements = !!$replacements$.length;
-
-	$: resetEditMode($replacements$);
+	let currentReplacement: ReplacementItem | undefined = $state();
 
 	function resetEditMode(_replacements: ReplacementItem[]) {
 		inEditMode = false;
 	}
+	let hasReplacements = $derived(!!$replacements$.length);
+	$effect(() => {
+		void [$replacements$];
+		untrack(() => {
+			resetEditMode($replacements$);
+		});
+	});
 </script>
 
 <details class="col-span-4 mb-2 cursor-pointer max-w-lg">
@@ -25,7 +34,7 @@
 		{#if inEditMode}
 			<ReplacementSettingsInput
 				{currentReplacement}
-				on:close={() => {
+				onclose={() => {
 					inEditMode = false;
 					currentReplacement = undefined;
 				}}
@@ -33,16 +42,16 @@
 		{:else if hasReplacements}
 			{#key $replacements$}
 				<ReplacementSettingsList
-					on:edit={({ detail }) => {
+					onedit={(detail) => {
 						currentReplacement = detail;
 						inEditMode = true;
 					}}
-					on:applyReplacements
+					{onapplyReplacements}
 				/>
 			{/key}
 		{:else}
 			<div class="flex justify-end my-2">
-				<button title="Add replacement" class="ml-2 hover:text-primary" on:click={() => (inEditMode = true)}>
+				<button title="Add replacement" class="ml-2 hover:text-primary" onclick={() => (inEditMode = true)}>
 					<Icon path={mdiPlus} />
 				</button>
 			</div>

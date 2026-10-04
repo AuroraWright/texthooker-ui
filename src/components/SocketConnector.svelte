@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+
 	import { mdiConnection } from '@mdi/js';
 	import { onMount } from 'svelte';
 	import { SocketConnection } from '../socket';
@@ -17,17 +19,17 @@
 	} from '../stores/stores';
 	import Icon from './Icon.svelte';
 
-	export let isPrimary = true;
+	interface Props {
+		isPrimary?: boolean;
+	}
+
+	let { isPrimary = true }: Props = $props();
 
 	let socketConnection: SocketConnection | undefined;
 	let intitialAttemptDone = false;
-	let wasConnected = false;
+	let wasConnected = $state(false);
 	let closeRequested = false;
-	let socketState = isPrimary ? socketState$ : secondarySocketState$;
-
-	$: connectedWithLabel = updateConnectedWithLabel(wasConnected);
-
-	$: handleSocketState($socketState);
+	const socketState = untrack(() => (isPrimary ? socketState$ : secondarySocketState$));
 
 	onMount(() => {
 		toggleSocket();
@@ -101,6 +103,13 @@
 			socketConnection.connect();
 		}
 	}
+	let connectedWithLabel = $derived(updateConnectedWithLabel(wasConnected));
+	$effect(() => {
+		void [$socketState];
+		untrack(() => {
+			handleSocketState($socketState);
+		});
+	});
 </script>
 
 {#if $socketState !== 0}
@@ -111,11 +120,11 @@
 		class:hidden={!$showConnectionIcon$}
 		title={connectedWithLabel}
 	>
-		<Icon path={mdiConnection} class="cursor-pointer mx-2" on:click={toggleSocket} />
+		<Icon path={mdiConnection} class="cursor-pointer mx-2" onclick={toggleSocket} />
 	</div>
 {:else}
 	<span
 		class="animate-ping relative inline-flex rounded-full h-3 w-3 mx-3 bg-primary"
 		class:hidden={!$showConnectionIcon$}
-	/>
+	></span>
 {/if}

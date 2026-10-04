@@ -1,16 +1,27 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
 	import Icon from './Icon.svelte';
 
-	export let icon: string | undefined;
-	export let message: string | undefined;
-	export let type = 'info';
-	export let showCancel = true;
-	export let askForData = '';
-	export let dataValue: string | number | undefined;
-	export let callback: <T>(param: { canceled: boolean; data: T }) => void;
+	interface Props {
+		onclose?: () => void;
+		icon: string | undefined;
+		message: string | undefined;
+		type?: string;
+		showCancel?: boolean;
+		askForData?: string;
+		dataValue: string | number | undefined;
+		callback: <T>(param: { canceled: boolean; data: T }) => void;
+	}
 
-	const dispatch = createEventDispatcher<{ close: void }>();
+	let {
+		onclose,
+		icon,
+		message,
+		type = 'info',
+		showCancel = true,
+		askForData = '',
+		dataValue = $bindable(),
+		callback,
+	}: Props = $props();
 
 	function handleChange(event: Event) {
 		const target = event.target as HTMLInputElement;
@@ -33,7 +44,7 @@
 								type={askForData}
 								class="input input-bordered h-8 ml-2"
 								value={dataValue}
-								on:change={handleChange}
+								onchange={handleChange}
 							/>
 						{/if}
 					</div>
@@ -46,17 +57,17 @@
 			{#if showCancel}
 				<button
 					class="btn btn-sm btn-ghost"
-					on:click={() => {
+					onclick={() => {
 						callback?.({ canceled: true, data: dataValue });
-						dispatch('close');
+						onclose?.();
 					}}>Cancel</button
 				>
 			{/if}
 			<button
 				class="btn btn-sm btn-primary"
-				on:click={() => {
+				onclick={() => {
 					callback?.({ canceled: false, data: dataValue });
-					dispatch('close');
+					onclose?.();
 				}}>Confirm</button
 			>
 		</div>

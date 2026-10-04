@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { mdiContentSave, mdiDatabaseSync, mdiDelete, mdiHelpCircle, mdiReload } from '@mdi/js';
-	import { createEventDispatcher, tick } from 'svelte';
+	import { tick } from 'svelte';
 	import {
 		adjustTimerOnAfk$,
 		afkTimer$,
@@ -64,7 +64,13 @@
 	import { dummyFn } from '../util';
 	import Icon from './Icon.svelte';
 
-	export let isQuickSwitch = false;
+	interface Props {
+		onlayoutChange?: () => void;
+		onexportImportPreset?: (value: MouseEvent) => void;
+		isQuickSwitch?: boolean;
+	}
+
+	let { onlayoutChange, onexportImportPreset, isQuickSwitch = false }: Props = $props();
 
 	export function getCurrentSettings(): Settings {
 		return {
@@ -190,7 +196,7 @@
 		}
 
 		tick().then(() => {
-			dispatch('layoutChange');
+			onlayoutChange?.();
 
 			if ($socketState$ !== 1 && $continuousReconnect$) {
 				reconnectSocket$.next();
@@ -203,7 +209,6 @@
 	}
 
 	const fallbackPresetEntry = [{ name: '' }];
-	const dispatch = createEventDispatcher<{ layoutChange: void; exportImportPreset: MouseEvent }>();
 
 	function selectPreset(event: Event) {
 		const target = event.target as HTMLSelectElement;
@@ -274,7 +279,7 @@
 		class="w-48 hidden sm:block"
 		class:sm:hidden={!$showPresetQuickSwitch$ || $settingPresets$.length < 2}
 		value={$lastSettingPreset$}
-		on:change={selectPreset}
+		onchange={selectPreset}
 	>
 		{#each $settingPresets$.length ? $settingPresets$ : fallbackPresetEntry as preset (preset.name)}
 			<option value={preset.name}>
@@ -283,50 +288,54 @@
 		{/each}
 	</select>
 {:else}
-	<details role="button" class="col-span-4 mb-2">
+	<details class="col-span-4 mb-2 cursor-pointer">
 		<summary>Presets</summary>
 		<div class="flex items-center justify-between mt-2">
-			<select class="select flex-1 max-w-md" value={$lastSettingPreset$} on:change={selectPreset}>
+			<select class="select flex-1 max-w-md" value={$lastSettingPreset$} onchange={selectPreset}>
 				{#each $settingPresets$.length ? $settingPresets$ : fallbackPresetEntry as preset (preset.name)}
 					<option value={preset.name}>
 						{preset.name || 'No Presets stored'}
 					</option>
 				{/each}
 			</select>
+			<!-- svelte-ignore a11y_interactive_supports_focus -->
 			<div
 				role="button"
 				class="flex flex-col items-center hover:text-primary ml-3"
-				on:click={savePreset}
-				on:keyup={dummyFn}
+				onclick={savePreset}
+				onkeyup={dummyFn}
 			>
 				<Icon path={mdiContentSave} />
 				<span class="label-text">Save</span>
 			</div>
+			<!-- svelte-ignore a11y_interactive_supports_focus -->
 			<div
 				role="button"
 				class="flex flex-col items-center hover:text-primary ml-3"
-				on:click={(event) => dispatch('exportImportPreset', event)}
-				on:keyup={dummyFn}
+				onclick={(event) => onexportImportPreset?.(event)}
+				onkeyup={dummyFn}
 			>
 				<Icon path={mdiDatabaseSync} />
 				<span class="label-text">Export/Import</span>
 			</div>
+			<!-- svelte-ignore a11y_interactive_supports_focus -->
 			<div
 				role="button"
 				class="flex flex-col items-center hover:text-primary ml-3"
 				class:invisible={!$lastSettingPreset$}
-				on:click={() => changePreset($lastSettingPreset$)}
-				on:keyup={dummyFn}
+				onclick={() => changePreset($lastSettingPreset$)}
+				onkeyup={dummyFn}
 			>
 				<Icon path={mdiReload} />
 				<span class="label-text">Reload</span>
 			</div>
+			<!-- svelte-ignore a11y_interactive_supports_focus -->
 			<div
 				role="button"
 				class="flex flex-col items-center hover:text-primary ml-3"
 				class:invisible={!$lastSettingPreset$}
-				on:click={deletePreset}
-				on:keyup={dummyFn}
+				onclick={deletePreset}
+				onkeyup={dummyFn}
 			>
 				<Icon path={mdiDelete} />
 				<span class="label-text">Delete</span>

@@ -1,4 +1,4 @@
-<div class="tap-highlight-transparent absolute inset-0 bg-black/[.3] z-20" />
+<div class="tap-highlight-transparent absolute inset-0 bg-black/[.3] z-20"></div>
 <div class="fixed inset-0 flex h-full w-full items-center justify-center z-50">
 	<div role="status">
 		<svg
@@ -20,4 +20,4 @@
 		<span class="sr-only">Loading...</span>
 	</div>
 </div>
-<div />
+<div></div>

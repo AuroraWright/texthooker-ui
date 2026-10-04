@@ -1,4 +1,10 @@
 <script lang="ts">
+	interface Props {
+		onafkBlur?: (value: boolean) => void;
+	}
+	let { onafkBlur }: Props = $props();
+	import { untrack } from 'svelte';
+
 	import {
 		combineLatest,
 		debounceTime,
@@ -11,7 +17,6 @@
 		tap,
 		throttleTime,
 	} from 'rxjs';
-	import { createEventDispatcher } from 'svelte';
 	import {
 		adjustTimerOnAfk$,
 		afkTimer$,
@@ -36,9 +41,7 @@
 
 	let charCountCache = new Map<string, number>();
 	let cachedLineTexts = new Map<string, string>();
-	let lastProcessedLineCount = 0;
-
-	const dispatch = createEventDispatcher<{ afkBlur: boolean }>();
+	let lastProcessedLineCount = $state(0);
 
 	const isNotJapaneseRegex = /[^0-9A-Z○◯々-〇〻ぁ-ゖゝ-ゞァ-ヺー０-９Ａ-Ｚｦ-ﾝ\p{Radical}\p{Unified_Ideograph}]+/gimu;
 
@@ -76,59 +79,10 @@
 		reduceToEmptyString(),
 	);
 
-	let timerElm: HTMLElement;
-	let speed = 0;
-	let characters = 0;
-	let statstring = '';
-
-	$: if (($showCharacterCount$ || $characterMilestone$ > 1) && $lineData$) {
-		let currentCount = 0;
-		let nextMilestone = $characterMilestone$ > 1 ? $characterMilestone$ : 0;
-		const currentIds = new Set<string>();
-		const needsCleanup = $lineData$.length < lastProcessedLineCount;
-		const newMilestones = new Map<string, string>();
-		lastProcessedLineCount = $lineData$.length;
-
-		for (let i = 0, len = $lineData$.length; i < len; i++) {
-			const line = $lineData$[i];
-			if (needsCleanup) currentIds.add(line.id);
-
-			let lineCharCount = charCountCache.get(line.id);
-			if (lineCharCount === undefined || cachedLineTexts.get(line.id) !== line.text) {
-				lineCharCount = getCharacterCount(line.text);
-				charCountCache.set(line.id, lineCharCount);
-				cachedLineTexts.set(line.id, line.text);
-			}
-
-			currentCount += lineCharCount;
-
-			if (nextMilestone && currentCount >= nextMilestone) {
-				newMilestones.set(line.id, `Milestone ${nextMilestone} (${currentCount})`);
-				while (currentCount >= nextMilestone) {
-					nextMilestone += $characterMilestone$;
-				}
-			}
-		}
-
-		if (needsCleanup) {
-			for (const id of charCountCache.keys()) {
-				if (!currentIds.has(id)) {
-					charCountCache.delete(id);
-					cachedLineTexts.delete(id);
-				}
-			}
-		}
-
-		$milestoneLines$ = newMilestones;
-		characters = currentCount;
-		speed = $timeValue$ ? Math.ceil((3600 * characters) / $timeValue$) : 0;
-	}
-
-	$: if ($timeValue$ > -1 && ($showTimer$ || $showSpeed$ || $showCharacterCount$ || $showLineCount$)) {
-		buildString($timeValue$, speed, characters, $lineData$.length);
-	} else {
-		statstring = '';
-	}
+	let timerElm: HTMLElement = $state();
+	let speed = $state(0);
+	let characters = $state(0);
+	let statstring = $state('');
 
 	function handlePointerLeave() {
 		const selection = window.getSelection();
@@ -152,7 +106,7 @@
 			}
 
 			if ($enableAfkBlur$) {
-				dispatch('afkBlur', true);
+				onafkBlur?.(true);
 
 				document.addEventListener(
 					'dblclick',
@@ -161,7 +115,7 @@
 
 						window.getSelection().removeAllRanges();
 
-						dispatch('afkBlur', false);
+						onafkBlur?.(false);
 
 						if ($enableAfkBlurRestart$) {
 							$isPaused$ = false;
@@ -211,16 +165,83 @@
 
 		statstring = newString.replace(/[ ]+/g, ' ').trim();
 	}
+	$effect(() => {
+		void [$showCharacterCount$, $characterMilestone$, $lineData$, $timeValue$];
+		untrack(() => {
+			if (($showCharacterCount$ || $characterMilestone$ > 1) && $lineData$) {
+				let currentCount = 0;
+				let nextMilestone = $characterMilestone$ > 1 ? $characterMilestone$ : 0;
+				const currentIds = new Set<string>();
+				const needsCleanup = $lineData$.length < lastProcessedLineCount;
+				const newMilestones = new Map<string, string>();
+				lastProcessedLineCount = $lineData$.length;
+
+				for (let i = 0, len = $lineData$.length; i < len; i++) {
+					const line = $lineData$[i];
+					if (needsCleanup) currentIds.add(line.id);
+
+					let lineCharCount = charCountCache.get(line.id);
+					if (lineCharCount === undefined || cachedLineTexts.get(line.id) !== line.text) {
+						lineCharCount = getCharacterCount(line.text);
+						charCountCache.set(line.id, lineCharCount);
+						cachedLineTexts.set(line.id, line.text);
+					}
+
+					currentCount += lineCharCount;
+
+					if (nextMilestone && currentCount >= nextMilestone) {
+						newMilestones.set(line.id, `Milestone ${nextMilestone} (${currentCount})`);
+						while (currentCount >= nextMilestone) {
+							nextMilestone += $characterMilestone$;
+						}
+					}
+				}
+
+				if (needsCleanup) {
+					for (const id of charCountCache.keys()) {
+						if (!currentIds.has(id)) {
+							charCountCache.delete(id);
+							cachedLineTexts.delete(id);
+						}
+					}
+				}
+
+				$milestoneLines$ = newMilestones;
+				characters = currentCount;
+				speed = $timeValue$ ? Math.ceil((3600 * characters) / $timeValue$) : 0;
+			}
+		});
+	});
+	$effect(() => {
+		void [
+			$timeValue$,
+			$showTimer$,
+			$showSpeed$,
+			$showCharacterCount$,
+			$showLineCount$,
+			speed,
+			characters,
+			$lineData$,
+		];
+		untrack(() => {
+			if ($timeValue$ > -1 && ($showTimer$ || $showSpeed$ || $showCharacterCount$ || $showLineCount$)) {
+				buildString($timeValue$, speed, characters, $lineData$.length);
+			} else {
+				statstring = '';
+			}
+		});
+	});
 </script>
 
 {$timer$ ?? ''}
 {$waitForIdle$ ?? ''}
 
 <div
+	role="status"
 	class="text-sm timer mr-1 sm:text-base sm:mr-2"
 	class:blur={$blurStats$}
 	bind:this={timerElm}
-	on:pointerleave={handlePointerLeave}
+	onpointerleave={handlePointerLeave}
 >
 	<div>{statstring}</div>
 </div>

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { mdiTrophy } from '@mdi/js';
-	import { createEventDispatcher, onDestroy, onMount, tick } from 'svelte';
+	import { untrack, onDestroy, onMount, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import {
 		displayVertical$,
@@ -16,20 +16,35 @@
 	import { dummyFn, newLineCharacter } from '../util';
 	import Icon from './Icon.svelte';
 
-	export let line: LineItem;
-	export let pipWindow: Window = undefined;
-	export let isSelected = false;
-	export let searchQuery = '';
-	export let isCurrentMatchLine = false;
+	interface Props {
+		ondeselected?: (value: string) => void;
+		onselected?: (value: string) => void;
+		onedit?: (value: LineItemEditEvent) => void;
+		line: LineItem;
+		pipWindow?: Window;
+		isSelected?: boolean;
+		searchQuery?: string;
+		isCurrentMatchLine?: boolean;
+	}
 
-	const isNew = pipWindow ? pipNewLines.has(line) : newLines.has(line);
-	const dispatch = createEventDispatcher<{ deselected: string; selected: string; edit: LineItemEditEvent }>();
+	let {
+		ondeselected,
+		onselected,
+		onedit,
+		line,
+		pipWindow = undefined,
+		isSelected = false,
+		searchQuery = '',
+		isCurrentMatchLine = false,
+	}: Props = $props();
 
-	let paragraph: HTMLElement;
+	const isNew = untrack(() => (pipWindow ? pipNewLines.has(line) : newLines.has(line)));
+
+	let paragraph: HTMLElement = $state();
 	let originalText = '';
-	let isEditable = false;
+	let isEditable = $state(false);
 
-	$: isVerticalDisplay = !pipWindow && $displayVertical$;
+	let isVerticalDisplay = $derived(!pipWindow && $displayVertical$);
 
 	onMount(() => {
 		if (isNew) {
@@ -48,7 +63,7 @@
 
 		if (isEditable && paragraph) {
 			isEditable = false;
-			dispatch('edit', { inEdit: false });
+			onedit?.({ inEdit: false });
 		}
 	});
 
@@ -61,14 +76,14 @@
 
 		if (event.ctrlKey || event.metaKey) {
 			if (isSelected) {
-				dispatch('deselected', line.id);
+				ondeselected?.(line.id);
 			} else {
-				dispatch('selected', line.id);
+				onselected?.(line.id);
 			}
 		} else {
 			originalText = paragraph.innerText;
 			isEditable = true;
-			dispatch('edit', { inEdit: true });
+			onedit?.({ inEdit: true });
 			document.addEventListener('click', clickOutsideHandler, false);
 			tick().then(() => {
 				paragraph.focus();
@@ -82,7 +97,7 @@
 			if (isEditable) {
 				isEditable = false;
 				document.removeEventListener('click', clickOutsideHandler, false);
-				dispatch('edit', {
+				onedit?.({
 					inEdit: false,
 					data: { originalText, newText: paragraph.innerText, lineIndex: -1, line },
 				});
@@ -94,13 +109,16 @@
 		if (!query) return [{ match: false, text }];
 		const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 		const regex = new RegExp(`(${escaped})`, 'gi');
-		return text.split(regex).filter(Boolean).map(part => ({
-			match: part.toLowerCase() === query.toLowerCase(),
-			text: part
-		}));
+		return text
+			.split(regex)
+			.filter(Boolean)
+			.map((part) => ({
+				match: part.toLowerCase() === query.toLowerCase(),
+				text: part,
+			}));
 	}
 
-	function lineFly(node: HTMLElement) {
+	function lineFly(node: HTMLElement, _params?: unknown) {
 		if (!$enableLineAnimation$ || !isNew) {
 			return { duration: 0, delay: 0 };
 		}
@@ -124,10 +142,10 @@
 	class:whitespace-pre-wrap={$preserveWhitespace$}
 	class:show-bullet={$showLinePoints$}
 	contenteditable={isEditable}
-	on:dblclick={handleDblClick}
-	on:keyup={dummyFn}
+	ondblclick={handleDblClick}
+	onkeyup={dummyFn}
 	bind:this={paragraph}
-	in:lineFly
+	in:lineFly|global
 >
 	{#if !isEditable && searchQuery}
 		{#each getSegments(line.text, searchQuery) as segment}
@@ -135,8 +153,8 @@
 				<mark
 					class="text-black"
 					class:bg-yellow-300={!isCurrentMatchLine}
-					class:bg-amber-500={isCurrentMatchLine}
-				>{segment.text}</mark>
+					class:bg-amber-500={isCurrentMatchLine}>{segment.text}</mark
+				>
 			{:else}
 				{segment.text}
 			{/if}
@@ -171,7 +189,7 @@
 		outline: none;
 	}
 	.show-bullet::before {
-		content: "• ";
+		content: '• ';
 		opacity: 0.1;
 		transition: opacity 0.3s;
 	}

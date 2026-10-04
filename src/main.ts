@@ -1,9 +1,18 @@
 import './app.css';
 
+import { flushSync, mount, unmount } from 'svelte';
+
 import App from './components/App.svelte';
 
-const app = new App({
+const app = mount(App, {
 	target: document.body,
+	intro: false,
 });
 
-export default app;
+// Keep the embeddable build ready synchronously and preserve its teardown API.
+flushSync();
+
+export default {
+	...app,
+	$destroy: () => unmount(app),
+};

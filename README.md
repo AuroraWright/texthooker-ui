@@ -14,6 +14,8 @@ When facing connection issues check the [FAQ](https://github.com/Renji-XD/textho
 
 ## Building
 
+Requires Node.js 20 (20.19+), 22 (22.12+), or 24+ and pnpm. The app uses Svelte 5 runes; existing browser storage and exported data formats are preserved.
+
 ```
 # Install pnpm
 npm install --global pnpm
@@ -29,6 +31,21 @@ pnpm run preview
 ```
 
 The page can be opened via the index.html inside the "docs" folder and is usable without the need of hosting it via a server.
+
+The embeddable IIFE and its stylesheet can be built with `pnpm run build:lib`. The global `texthooker.$destroy()` method removes the mounted app.
+
+### Verification
+
+```sh
+pnpm run check
+pnpm run check:types
+pnpm test
+pnpm run test:e2e
+```
+
+The browser suite uses an installed Google Chrome, builds both outputs, and starts a local Vite server. It covers text intake, editing, selection, undo, persistence, settings, search and virtual scrolling, notes, timers, replacements, presets, imports and exports, both WebSockets, external clipboard monitoring, milestones, picture-in-picture, AFK blur, the offline page, and the embeddable build.
+
+The Nix flake pins Node.js 22 and pnpm 9 to match its dependency-store hash. If dependencies change, regenerate `pnpmDeps.hash` with that pnpm version before building the flake.
 
 ## FAQ
 

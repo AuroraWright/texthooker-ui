@@ -16,7 +16,8 @@
         name = "texthooker-ui";
         src = ./.;
         pkgs = import nixpkgs {inherit system;};
-        nativeBuildInputs = with pkgs; [nodejs pnpm.configHook];
+        pnpm = pkgs.pnpm_9;
+        nativeBuildInputs = [pkgs.nodejs_22 pnpm.configHook];
       in {
         # index.html will be located in the nix store
         # build with "nix build . --print-out-paths" to get the path
@@ -24,10 +25,10 @@
           inherit name nativeBuildInputs src;
           pname = name;
 
-          pnpmDeps = pkgs.pnpm.fetchDeps {
+          pnpmDeps = pnpm.fetchDeps {
             pname = name;
             inherit src;
-            hash = "sha256-Wqs3aO4uq/5eqVmp9FFZNVEWo/TpwDib9PJFABmFrbk=";
+            hash = "sha256-7XhsCb10t2uRwFEnPpp7B732K3VFPqoaWiOMlhFn7M4=";
           };
 
           installPhase = ''

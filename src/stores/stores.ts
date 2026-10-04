@@ -88,7 +88,7 @@ export const secondaryWebsocketUrl$ = writableStringSubject()(
 
 export const fontSize$ = writableNumberSubject()('bannou-texthooker-fontSize', defaultSettings.fontSize$);
 
-export const linePadding$ = writableStringSubject()('bannou-texthooker-linePadding', defaultSettings.linePadding$);
+export const linePadding$ = writableNumberSubject()('bannou-texthooker-linePadding', defaultSettings.linePadding$);
 
 export const characterMilestone$ = writableNumberSubject()(
 	'bannou-texthooker-characterMilestone',

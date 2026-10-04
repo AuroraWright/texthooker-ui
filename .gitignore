@@ -25,3 +25,9 @@ dist-ssr
 
 # nix flake build output
 result
+
+# Build and browser-test artifacts
+texthooker-ui/
+playwright-report/
+test-results/
+*.tsbuildinfo

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+
 	import {
 		mdiClose,
 		mdiDatabaseSync,
@@ -9,7 +11,7 @@
 		mdiWeatherNight,
 		mdiWhiteBalanceSunny,
 	} from '@mdi/js';
-	import { createEventDispatcher, tick } from 'svelte';
+	import { tick } from 'svelte';
 	import { removeIDBItem } from '../idb';
 	import {
 		actionHistory$,
@@ -90,10 +92,31 @@
 	import Presets from './Presets.svelte';
 	import ReplacementSettings from './ReplacementSettings.svelte';
 
-	export let selectedLineIds: string[];
-	export let settingsOpen: boolean;
-	export let settingsElement: SVGElement;
-	export let pipAvailable: boolean;
+	interface Props {
+		onlayoutChange?: () => void;
+		onmaxLinesChange?: () => void;
+		onlinesRemoved?: (ids: string[], indices: number[]) => void;
+		onlinesChanged?: (ids: string[], indices: number[]) => void;
+		ondataResetOrImported?: () => void;
+		onapplyReplacements?: () => void;
+		selectedLineIds: string[];
+		settingsOpen: boolean;
+		settingsElement: SVGElement;
+		pipAvailable: boolean;
+	}
+
+	let {
+		onlayoutChange,
+		onmaxLinesChange,
+		onlinesRemoved,
+		onlinesChanged,
+		ondataResetOrImported,
+		onapplyReplacements,
+		selectedLineIds = $bindable(),
+		settingsOpen = $bindable(),
+		settingsElement,
+		pipAvailable,
+	}: Props = $props();
 
 	export async function handleReset(linesOnly: boolean) {
 		if (!$skipResetConfirmations$) {
@@ -128,10 +151,9 @@
 			await removeIDBItem('bannou-texthooker-actionHistory');
 		}
 
-		dispatch('dataResetOrImported');
+		ondataResetOrImported?.();
 	}
 
-	const dispatch = createEventDispatcher<{ layoutChange: void; maxLinesChange: void; linesRemoved: string[]; dataResetOrImported: void; }>();
 	const onlineFonts = [
 		OnlineFont.OFF,
 		OnlineFont.NOTO,
@@ -141,21 +163,11 @@
 		OnlineFont.CINECAPTION226,
 	];
 
-	let dataFileInput: HTMLInputElement;
-	let settingsFileInput: HTMLInputElement;
-	let presetFileInput: HTMLInputElement;
-	let presetComponent: Presets;
+	let dataFileInput: HTMLInputElement = $state();
+	let settingsFileInput: HTMLInputElement = $state();
+	let presetFileInput: HTMLInputElement = $state();
+	let presetComponent: ReturnType<typeof Presets> = $state();
 	let clipboardMutationObserver: MutationObserver | undefined;
-
-	$: websocketUrl = $websocketUrl$;
-
-	$: secondaryWebsocketUrl = $secondaryWebsocketUrl$;
-
-	$: document.body.dataset.theme = $theme$;
-
-	$: updateExternalClipboardMonitor($enableExternalClipboardMonitor$);
-
-	$: applyCustomCSS(document, $customCSS$);
 
 	function handleSecondaryWebsocketChange(event: Event) {
 		const target = event.target as HTMLInputElement;
@@ -190,7 +202,7 @@
 			const { addedNodes } = mutations[index];
 
 			for (let index2 = 0, { length: length2 } = addedNodes; index2 < length2; index2 += 1) {
-				const addedNode = addedNodes[index] as HTMLElement;
+				const addedNode = addedNodes[index2] as HTMLElement;
 
 				if (addedNode?.tagName === 'P') {
 					newLine$.next([addedNode.textContent, LineType.EXTERNAL]);
@@ -339,7 +351,7 @@
 		}
 
 		dataFileInput.value = null;
-		dispatch('dataResetOrImported');
+		ondataResetOrImported?.();
 	}
 
 	async function handleSettingsFileChange() {
@@ -423,7 +435,7 @@
 		}
 
 		target.value = `${$characterMilestone$}`;
-		dispatch('layoutChange');
+		onlayoutChange?.();
 	}
 
 	function handlePreventLastDuplicateBlur(event) {
@@ -464,13 +476,16 @@
 		const nonDuplicateLines: LineItem[] = [];
 		const nonDuplicateLineText = new Set<string>();
 		const removedIds = new Set<string>();
+		const removedIndices: number[] = [];
 		const lines = $lineData$.splice(-($preventLastDuplicate$ + 1));
+		const startIndex = $lineData$.length;
 
 		for (let index = 0, { length } = lines; index < length; index += 1) {
 			const line = lines[index];
 
 			if (nonDuplicateLineText.has(line.text)) {
 				removedIds.add(line.id);
+				removedIndices.push(startIndex + index);
 			} else {
 				nonDuplicateLines.push(line);
 				nonDuplicateLineText.add(line.text);
@@ -481,8 +496,7 @@
 		selectedLineIds = selectedLineIds.filter((selectedLineId) => !removedIds.has(selectedLineId));
 
 		if (removedIds.size > 0) {
-			dispatch('linesRemoved', Array.from(removedIds));
-			dispatch('layoutChange');
+			onlinesRemoved?.(Array.from(removedIds), removedIndices);
 		}
 	}
 
@@ -535,8 +549,8 @@
 		if (canceled) {
 			$maxLines$ = 0;
 		} else {
-			dispatch('maxLinesChange');
-			dispatch('layoutChange');
+			onmaxLinesChange?.();
+			onlayoutChange?.();
 		}
 	}
 
@@ -556,10 +570,12 @@
 		if (!canceled) {
 			const uniqueLines = new Set<string>();
 			const removedLineIds = new Set<string>();
+			const removedIndices: number[] = [];
 
-			$lineData$ = $lineData$.filter((line) => {
+			$lineData$ = $lineData$.filter((line, index) => {
 				if (uniqueLines.has(line.text)) {
 					removedLineIds.add(line.id);
+					removedIndices.push(index);
 					return false;
 				}
 
@@ -569,8 +585,7 @@
 			selectedLineIds = selectedLineIds.filter((selectedLineId) => !removedLineIds.has(selectedLineId));
 
 			if (removedLineIds.size > 0) {
-				dispatch('linesRemoved', Array.from(removedLineIds));
-				dispatch('layoutChange');
+				onlinesRemoved?.(Array.from(removedLineIds), removedIndices);
 			}
 		}
 	}
@@ -586,18 +601,27 @@
 			});
 
 			if (!canceled) {
-				$lineData$ = $lineData$.map((oldLine) => {
-					oldLine.text = oldLine.text.replace(/\s/g, '').trim();
+				const changedIds: string[] = [];
+				const changedIndices: number[] = [];
+				$lineData$ = $lineData$.map((oldLine, index) => {
+					const text = oldLine.text.replace(/\s/g, '').trim();
+					if (text !== oldLine.text) {
+						oldLine.text = text;
+						changedIds.push(oldLine.id);
+						changedIndices.push(index);
+					}
 					return oldLine;
 				});
-				dispatch('layoutChange');
+				if (changedIds.length > 0) {
+					onlinesChanged?.(changedIds, changedIndices);
+				}
 			}
 		}
 	}
 
 	function handleCustomCSSBlur(event: FocusEvent) {
 		$customCSS$ = (event.target as HTMLTextAreaElement).value;
-		dispatch('layoutChange');
+		onlayoutChange?.();
 	}
 
 	async function handleImport(fileInput: HTMLInputElement, message: string) {
@@ -667,6 +691,26 @@
 			fileReader.readAsText(file, 'utf-8');
 		});
 	}
+	let websocketUrl = $derived($websocketUrl$);
+	let secondaryWebsocketUrl = $derived($secondaryWebsocketUrl$);
+	$effect(() => {
+		void [$theme$];
+		untrack(() => {
+			document.body.dataset.theme = $theme$;
+		});
+	});
+	$effect(() => {
+		void [$enableExternalClipboardMonitor$];
+		untrack(() => {
+			updateExternalClipboardMonitor($enableExternalClipboardMonitor$);
+		});
+	});
+	$effect(() => {
+		void [$customCSS$];
+		untrack(() => {
+			applyCustomCSS(document, $customCSS$);
+		});
+	});
 </script>
 
 <svelte:head>
@@ -674,89 +718,97 @@
 </svelte:head>
 
 {#if settingsOpen}
-	<input class="hidden" type="file" bind:this={dataFileInput} on:change={handleDataFileChange} />
-	<input class="hidden" type="file" bind:this={settingsFileInput} on:change={handleSettingsFileChange} />
-	<input class="hidden" type="file" bind:this={presetFileInput} on:change={handlePresetFileChange} />
+	<input class="hidden" type="file" bind:this={dataFileInput} onchange={handleDataFileChange} />
+	<input class="hidden" type="file" bind:this={settingsFileInput} onchange={handleSettingsFileChange} />
+	<input class="hidden" type="file" bind:this={presetFileInput} onchange={handlePresetFileChange} />
 	<div
 		class="flex flex-col max-[800px]:w-[90vw] min-[800px]:grid grid-cols-[max-content,auto,max-content,auto] gap-3 absolute overflow-auto h-[90vh] top-11 z-10 py-4 pr-8 pl-4 border bg-base-200 overscroll-contain"
 		use:clickOutside={handleSettingsClick}
 	>
 		<div class="mb-2" style="grid-column: 1/5;">
 			<div class="flex text-sm gap-x-5 min-[600px]:justify-between max-[600px]:flex-wrap max-[600px]:gap-y-5">
+				<!-- svelte-ignore a11y_interactive_supports_focus -->
 				<div
 					role="button"
 					class="flex flex-col items-center hover:text-primary"
-					on:click={handleSetTimer}
-					on:keyup={dummyFn}
+					onclick={handleSetTimer}
+					onkeyup={dummyFn}
 				>
 					<Icon path={mdiTimerEdit} />
 					<span class="label-text">Set Timer</span>
 				</div>
+				<!-- svelte-ignore a11y_interactive_supports_focus -->
 				<div
 					role="button"
 					class="flex flex-col items-center hover:text-primary"
-					on:click={handleResetTimer}
-					on:keyup={dummyFn}
+					onclick={handleResetTimer}
+					onkeyup={dummyFn}
 				>
 					<Icon path={mdiTimerCancel} />
 					<span class="label-text">Reset Timer</span>
 				</div>
+				<!-- svelte-ignore a11y_interactive_supports_focus -->
 				<div
 					role="button"
 					class="flex flex-col items-center hover:text-primary"
-					on:click={() => handleReset(true)}
-					on:keyup={dummyFn}
+					onclick={() => handleReset(true)}
+					onkeyup={dummyFn}
 				>
 					<Icon path={mdiDelete} />
 					<span class="label-text">Reset Lines</span>
 				</div>
+				<!-- svelte-ignore a11y_interactive_supports_focus -->
 				<div
 					role="button"
 					class="flex flex-col items-center hover:text-primary"
-					on:click={() => handleReset(false)}
-					on:keyup={dummyFn}
+					onclick={() => handleReset(false)}
+					onkeyup={dummyFn}
 				>
 					<Icon path={mdiDelete} />
 					<span class="label-text">Reset Data</span>
 				</div>
+				<!-- svelte-ignore a11y_interactive_supports_focus -->
 				<div
 					role="button"
 					class="flex flex-col items-center hover:text-primary"
-					on:click={resetAllData}
-					on:keyup={dummyFn}
+					onclick={resetAllData}
+					onkeyup={dummyFn}
 				>
 					<Icon path={mdiDelete} />
 					<span class="label-text">Reset All</span>
 				</div>
+				<!-- svelte-ignore a11y_interactive_supports_focus -->
 				<div
 					role="button"
 					class="flex flex-col items-center hover:text-primary"
-					on:click={handleExportImportData}
-					on:keyup={dummyFn}
+					onclick={handleExportImportData}
+					onkeyup={dummyFn}
 				>
 					<Icon path={mdiDatabaseSync} />
 					<span class="label-text">Ex-/Import Data</span>
 				</div>
+				<!-- svelte-ignore a11y_interactive_supports_focus -->
 				<div
 					role="button"
 					class="flex flex-col items-center hover:text-primary"
-					on:click={handleExportImportSettings}
-					on:keyup={dummyFn}
+					onclick={handleExportImportSettings}
+					onkeyup={dummyFn}
 				>
 					<Icon path={mdiDatabaseSync} />
 					<span class="label-text">Ex-/Import Settings</span>
 				</div>
+				<!-- svelte-ignore a11y_interactive_supports_focus -->
 				<div
 					role="button"
 					class="flex flex-col items-center hover:text-primary"
-					on:click={() => ($theme$ = $theme$ === Theme.BUSINESS ? Theme.GARDEN : Theme.BUSINESS)}
-					on:keyup={dummyFn}
+					onclick={() => ($theme$ = $theme$ === Theme.BUSINESS ? Theme.GARDEN : Theme.BUSINESS)}
+					onkeyup={dummyFn}
 				>
 					<label class="swap swap-rotate">
 						<input
 							type="checkbox"
 							checked={$theme$ === Theme.BUSINESS}
-							on:change={() => ($theme$ = $theme$ === Theme.BUSINESS ? Theme.GARDEN : Theme.BUSINESS)}
+							onchange={() => ($theme$ = $theme$ === Theme.BUSINESS ? Theme.GARDEN : Theme.BUSINESS)}
 						/>
 						<Icon class="swap-on" path={mdiWeatherNight} />
 						<Icon class="swap-off" path={mdiWhiteBalanceSunny} />
@@ -766,24 +818,24 @@
 			</div>
 		</div>
 		<Presets
-			on:layoutChange
-			on:exportImportPreset={({ detail }) => handleExportImportPreset(detail)}
+			{onlayoutChange}
+			onexportImportPreset={(detail) => handleExportImportPreset(detail)}
 			bind:this={presetComponent}
 		/>
-		<ReplacementSettings on:applyReplacements />
+		<ReplacementSettings {onapplyReplacements} />
 		<span class="label-text col-span-2">Window Title</span>
 		<input class="input input-bordered h-8 col-span-2" bind:value={$windowTitle$} />
 		<span class="label-text col-span-2">Primary Websocket</span>
 		<input
 			class="input input-bordered h-8 col-span-2"
 			bind:value={websocketUrl}
-			on:change={() => ($websocketUrl$ = websocketUrl)}
+			onchange={() => ($websocketUrl$ = websocketUrl)}
 		/>
 		<span class="label-text col-span-2">Secondary Websocket</span>
 		<input
 			class="input input-bordered h-8 col-span-2"
 			bind:value={secondaryWebsocketUrl}
-			on:change={handleSecondaryWebsocketChange}
+			onchange={handleSecondaryWebsocketChange}
 		/>
 		<span class="label-text col-span-2">Font Size</span>
 		<input
@@ -791,39 +843,36 @@
 			class="input input-bordered h-8 col-span-2"
 			min="1"
 			bind:value={$fontSize$}
-			on:blur={() => {
+			onblur={() => {
 				if (!$fontSize$ || $fontSize$ < 1) {
 					$fontSize$ = 24;
 				}
-				dispatch('layoutChange');
+				onlayoutChange?.();
 			}}
 		/>
 		<span class="label-text col-span-2">Line Padding</span>
-        <input
+		<input
 			type="number"
 			class="input input-bordered h-8 col-span-2"
 			min="0"
 			bind:value={$linePadding$}
-			on:blur={() => {
+			onblur={() => {
 				if ($linePadding$ === null || $linePadding$ < 0) {
 					$linePadding$ = 1;
 				}
-				dispatch('layoutChange');
-		}} />
+				onlayoutChange?.();
+			}}
+		/>
 		<span class="label-text col-span-2">Character Milestone</span>
 		<input
 			type="number"
 			class="input input-bordered h-8 col-span-2"
 			min="0"
 			value={$characterMilestone$}
-			on:blur={handleCharacterMilestoneBlur}
+			onblur={handleCharacterMilestoneBlur}
 		/>
 		<span class="label-text mr-4 col-span-2">Online Font</span>
-		<select
-			class="select col-span-2"
-			bind:value={$onlineFont$}
-			on:change={() => dispatch('layoutChange')}
-		>
+		<select class="select col-span-2" bind:value={$onlineFont$} onchange={() => onlayoutChange?.()}>
 			{#each onlineFonts as font (font)}
 				<option value={font}>
 					{font}
@@ -836,7 +885,7 @@
 			class="input input-bordered h-8 col-span-2"
 			min="0"
 			value={$preventLastDuplicate$}
-			on:blur={handlePreventLastDuplicateBlur}
+			onblur={handlePreventLastDuplicateBlur}
 		/>
 		<span class="label-text col-span-2">Max lines</span>
 		<input
@@ -844,7 +893,7 @@
 			class="input input-bordered h-8 mb-2 col-span-2"
 			min="0"
 			value={$maxLines$}
-			on:blur={handleMaxLinesBlur}
+			onblur={handleMaxLinesBlur}
 		/>
 		{#if pipAvailable}
 			<span class="label-text col-span-2">Max lines (floating window)</span>
@@ -853,7 +902,7 @@
 				class="input input-bordered h-8 mb-2 col-span-2"
 				min="0"
 				value={$maxPipLines$}
-				on:blur={handleMaxPipLinesBlur}
+				onblur={handleMaxPipLinesBlur}
 			/>
 		{/if}
 		<span class="label-text col-span-2">AFK Timer (s)</span>
@@ -862,7 +911,7 @@
 			class="input input-bordered h-8 mb-2 col-span-2"
 			min="0"
 			bind:value={$afkTimer$}
-			on:blur={() => {
+			onblur={() => {
 				if ($afkTimer$ === null || $afkTimer$ < 0) {
 					$afkTimer$ = 0;
 				}
@@ -881,7 +930,7 @@
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={$persistStats$}
-			on:change={() =>
+			onchange={() =>
 				handlePersistenceChange($persistStats$, 'Clear stored stats', 'bannou-texthooker-timeValue')}
 		/>
 		<span class="label-text">Store Notes persistently</span>
@@ -889,7 +938,7 @@
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={$persistNotes$}
-			on:change={() =>
+			onchange={() =>
 				handlePersistenceChange($persistNotes$, 'Clear stored notes', 'bannou-texthooker-userNotes')}
 		/>
 		<span class="label-text">Store Lines persistently</span>
@@ -897,15 +946,14 @@
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={$persistLines$}
-			on:change={() =>
-				handlePersistenceChange($persistLines$, 'Clear stored lines', 'bannou-texthooker-lineData')}
+			onchange={() => handlePersistenceChange($persistLines$, 'Clear stored lines', 'bannou-texthooker-lineData')}
 		/>
 		<span class="label-text">Store Action History persistently</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={$persistActionHistory$}
-			on:change={() =>
+			onchange={() =>
 				handlePersistenceChange(
 					$persistActionHistory$,
 					'Clear action history',
@@ -929,7 +977,7 @@
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={$preventGlobalDuplicate$}
-			on:change={handlePreventGlobalDuplicateChange}
+			onchange={handlePreventGlobalDuplicateChange}
 		/>
 		<span class="label-text">Merge equal Line Starts</span>
 		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$mergeEqualLineStarts$} />
@@ -942,35 +990,35 @@
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={$displayVertical$}
-			on:change={() => dispatch('layoutChange')}
+			onchange={() => onlayoutChange?.()}
 		/>
 		<span class="label-text">Reverse Line Order</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={$reverseLineOrder$}
-			on:change={() => dispatch('layoutChange')}
+			onchange={() => onlayoutChange?.()}
 		/>
 		<span class="label-text">Preserve Whitespace</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={$preserveWhitespace$}
-			on:change={() => dispatch('layoutChange')}
+			onchange={() => onlayoutChange?.()}
 		/>
 		<span class="label-text">Remove all Whitespace</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={$removeAllWhitespace$}
-			on:change={handleRemoveAllWhiteSpaceChange}
+			onchange={handleRemoveAllWhiteSpaceChange}
 		/>
 		<span class="label-text">Show Bullet Points</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={$showLinePoints$}
-			on:change={() => dispatch('layoutChange')}
+			onchange={() => onlayoutChange?.()}
 		/>
 		<span class="label-text">Show Timer</span>
 		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$showTimer$} />
@@ -993,7 +1041,7 @@
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={$continuousReconnect$}
-			on:change={() => {
+			onchange={() => {
 				reconnectSocket$.next();
 				reconnectSecondarySocket$.next();
 			}}
@@ -1008,7 +1056,7 @@
 			style="grid-column: 1/5;"
 			rows="5"
 			value={$customCSS$}
-			on:blur={handleCustomCSSBlur}
-		/>
+			onblur={handleCustomCSSBlur}
+		></textarea>
 	</div>
 {/if}

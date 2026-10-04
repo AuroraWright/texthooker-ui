@@ -3,7 +3,7 @@
 	import { dialogOpen$, openDialog$ } from '../stores/stores';
 	import Dialog from './Dialog.svelte';
 
-	let props: any;
+	let props: any = $state();
 	let dialogPropsQueue: any[] = [];
 
 	const sub = openDialog$.subscribe((d) => {
@@ -32,5 +32,5 @@
 </script>
 
 {#if props}
-	<Dialog {...props} on:close={handleDialog} />
+	<Dialog {...props} onclose={handleDialog} />
 {/if}

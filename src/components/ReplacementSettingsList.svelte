@@ -1,4 +1,9 @@
 <script lang="ts">
+	interface Props {
+		onedit?: (value: ReplacementItem | undefined) => void;
+		onapplyReplacements?: () => void;
+	}
+	let { onedit, onapplyReplacements }: Props = $props();
 	import {
 		mdiDownloadMultiple,
 		mdiPencil,
@@ -8,18 +13,16 @@
 		mdiTrashCanOutline,
 	} from '@mdi/js';
 	import Sortable, { Swap } from 'sortablejs';
-	import { createEventDispatcher, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import { enabledReplacements$, lineData$, replacements$ } from '../stores/stores';
 	import type { ReplacementItem } from '../types';
 	import Icon from './Icon.svelte';
 
-	const dispatch = createEventDispatcher<{ edit: ReplacementItem | undefined; applyReplacements: void }>();
-
 	let sortableInstance: Sortable;
-	let listContainer: HTMLDivElement;
-	let listItems = JSON.parse(JSON.stringify($replacements$));
+	let listContainer: HTMLDivElement = $state();
+	let listItems = $state(JSON.parse(JSON.stringify($replacements$)));
 
-	$: canApplyReplacements = !!$lineData$.length && !!$enabledReplacements$.length;
+	let canApplyReplacements = $derived(!!$lineData$.length && !!$enabledReplacements$.length);
 
 	onMount(() => {
 		try {
@@ -45,11 +48,11 @@
 		const sortedList = getSortedList();
 
 		listItems = sortedList.map((replacement) => ({ ...replacement, enabled: newValue }));
-		$replacements$ = listItems;
+		$replacements$ = $state.snapshot(listItems);
 	}
 
 	function onUpdateList() {
-		$replacements$ = getSortedList();
+		$replacements$ = $state.snapshot(getSortedList());
 	}
 
 	function onReplaceItems(newReplacements: ReplacementItem[]) {
@@ -76,20 +79,20 @@
 		class:hover:text-primary={canApplyReplacements}
 		class:cursor-not-allowed={!canApplyReplacements}
 		disabled={!canApplyReplacements}
-		on:click={() => dispatch('applyReplacements')}
+		onclick={() => onapplyReplacements?.()}
 	>
 		<Icon path={mdiDownloadMultiple} />
 	</button>
-	<button title="Add replacement" class="ml-2 hover:text-primary" on:click={() => dispatch('edit', undefined)}>
+	<button title="Add replacement" class="ml-2 hover:text-primary" onclick={() => onedit?.(undefined)}>
 		<Icon path={mdiPlus} />
 	</button>
-	<button title="Enable all" class="ml-2 hover:text-primary" on:click={() => onToggle(true)}>
+	<button title="Enable all" class="ml-2 hover:text-primary" onclick={() => onToggle(true)}>
 		<Icon path={mdiToggleSwitchOutline} />
 	</button>
-	<button title="Disable all" class="ml-2 hover:text-primary" on:click={() => onToggle(false)}>
+	<button title="Disable all" class="ml-2 hover:text-primary" onclick={() => onToggle(false)}>
 		<Icon path={mdiToggleSwitchOffOutline} />
 	</button>
-	<button title="Remove all" class="ml-2 hover:text-primary" on:click={() => onReplaceItems([])}>
+	<button title="Remove all" class="ml-2 hover:text-primary" onclick={() => onReplaceItems([])}>
 		<Icon path={mdiTrashCanOutline} />
 	</button>
 </div>
@@ -100,18 +103,18 @@
 				{replacement.pattern}
 			</div>
 			<div class="min-w-max ml-2">
-				<button title="Edit" class="hover:text-primary" on:click={() => dispatch('edit', replacement)}>
+				<button title="Edit" class="hover:text-primary" onclick={() => onedit?.(replacement)}>
 					<Icon path={mdiPencil} height="1rem" />
 				</button>
 				<button
 					title="Remove"
 					class="hover:text-primary"
-					on:click={() =>
+					onclick={() =>
 						onReplaceItems($replacements$.filter((entry) => entry.pattern !== replacement.pattern))}
 				>
 					<Icon path={mdiTrashCanOutline} height="1rem" />
 				</button>
-				<input type="checkbox" class="ml-1" bind:checked={replacement.enabled} on:change={onUpdateList} />
+				<input type="checkbox" class="ml-1" bind:checked={replacement.enabled} onchange={onUpdateList} />
 			</div>
 		</div>
 	{/each}
