@@ -105,10 +105,8 @@
 	}
 	let connectedWithLabel = $derived(updateConnectedWithLabel(wasConnected));
 	$effect(() => {
-		void [$socketState];
-		untrack(() => {
-			handleSocketState($socketState);
-		});
+		const state = $socketState;
+		untrack(() => handleSocketState(state));
 	});
 </script>
 

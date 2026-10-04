@@ -226,6 +226,34 @@ test('large stored history remains virtualized and searchable in both writing mo
 	await expect(page.locator('main mark')).toBeInViewport();
 });
 
+test('search navigation resets when the query changes', async ({ page }) => {
+	await page.goto('/');
+	await paste(page, '猫の文章。');
+	await paste(page, '犬の文章。');
+	await paste(page, 'もう一匹の猫。');
+	await page.keyboard.press('Control+f');
+	const search = page.getByPlaceholder('Search text...');
+	const count = page.locator('.font-mono');
+	await search.fill('猫');
+	await expect(count).toHaveText('1 / 2');
+	await page.getByRole('button', { name: 'Next match', exact: true }).click();
+	await expect(count).toHaveText('2 / 2');
+	await expect(page.locator('main mark.bg-amber-500')).toBeInViewport();
+	await page.getByRole('button', { name: 'Previous match', exact: true }).click();
+	await expect(count).toHaveText('1 / 2');
+	await page.getByRole('button', { name: 'Next match', exact: true }).click();
+	await search.fill('犬');
+	await expect(count).toHaveText('1 / 1');
+	await expect(page.locator('main mark.bg-amber-500')).toHaveText('犬');
+	await search.fill('見つからない');
+	await expect(count).toHaveText('0 / 0');
+	await expect(page.getByRole('button', { name: 'Next match', exact: true })).toBeDisabled();
+	await search.fill('猫');
+	await expect(count).toHaveText('1 / 2');
+	await page.keyboard.press('Escape');
+	await expect(page.locator('main mark')).toHaveCount(0);
+});
+
 test('primary and secondary websocket messages update the list', async ({ page }) => {
 	let primary: import('@playwright/test').WebSocketRoute;
 	let secondary: import('@playwright/test').WebSocketRoute;

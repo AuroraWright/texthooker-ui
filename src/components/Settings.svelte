@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
-
 	import {
 		mdiClose,
 		mdiDatabaseSync,
@@ -694,22 +692,13 @@
 	let websocketUrl = $derived($websocketUrl$);
 	let secondaryWebsocketUrl = $derived($secondaryWebsocketUrl$);
 	$effect(() => {
-		void [$theme$];
-		untrack(() => {
-			document.body.dataset.theme = $theme$;
-		});
+		document.body.dataset.theme = $theme$;
 	});
 	$effect(() => {
-		void [$enableExternalClipboardMonitor$];
-		untrack(() => {
-			updateExternalClipboardMonitor($enableExternalClipboardMonitor$);
-		});
+		updateExternalClipboardMonitor($enableExternalClipboardMonitor$);
 	});
 	$effect(() => {
-		void [$customCSS$];
-		untrack(() => {
-			applyCustomCSS(document, $customCSS$);
-		});
+		applyCustomCSS(document, $customCSS$);
 	});
 </script>
 

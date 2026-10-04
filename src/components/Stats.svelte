@@ -3,7 +3,6 @@
 		onafkBlur?: (value: boolean) => void;
 	}
 	let { onafkBlur }: Props = $props();
-	import { untrack } from 'svelte';
 
 	import {
 		combineLatest,
@@ -41,7 +40,7 @@
 
 	let charCountCache = new Map<string, number>();
 	let cachedLineTexts = new Map<string, string>();
-	let lastProcessedLineCount = $state(0);
+	let lastProcessedLineCount = 0;
 
 	const isNotJapaneseRegex = /[^0-9A-Z○◯々-〇〻ぁ-ゖゝ-ゞァ-ヺー０-９Ａ-Ｚｦ-ﾝ\p{Radical}\p{Unified_Ideograph}]+/gimu;
 
@@ -80,9 +79,13 @@
 	);
 
 	let timerElm: HTMLElement = $state();
-	let speed = $state(0);
 	let characters = $state(0);
-	let statstring = $state('');
+	let speed = $derived($timeValue$ ? Math.ceil((3600 * characters) / $timeValue$) : 0);
+	let statstring = $derived(
+		$timeValue$ > -1 && ($showTimer$ || $showSpeed$ || $showCharacterCount$ || $showLineCount$)
+			? buildString($timeValue$, speed, characters, $lineData$.length)
+			: '',
+	);
 
 	function handlePointerLeave() {
 		const selection = window.getSelection();
@@ -163,73 +166,50 @@
 			newString += ` ${currentLines}`;
 		}
 
-		statstring = newString.replace(/[ ]+/g, ' ').trim();
+		return newString.replace(/[ ]+/g, ' ').trim();
 	}
 	$effect(() => {
-		void [$showCharacterCount$, $characterMilestone$, $lineData$, $timeValue$];
-		untrack(() => {
-			if (($showCharacterCount$ || $characterMilestone$ > 1) && $lineData$) {
-				let currentCount = 0;
-				let nextMilestone = $characterMilestone$ > 1 ? $characterMilestone$ : 0;
-				const currentIds = new Set<string>();
-				const needsCleanup = $lineData$.length < lastProcessedLineCount;
-				const newMilestones = new Map<string, string>();
-				lastProcessedLineCount = $lineData$.length;
+		if (($showCharacterCount$ || $characterMilestone$ > 1) && $lineData$) {
+			let currentCount = 0;
+			let nextMilestone = $characterMilestone$ > 1 ? $characterMilestone$ : 0;
+			const currentIds = new Set<string>();
+			const needsCleanup = $lineData$.length < lastProcessedLineCount;
+			const newMilestones = new Map<string, string>();
+			lastProcessedLineCount = $lineData$.length;
 
-				for (let i = 0, len = $lineData$.length; i < len; i++) {
-					const line = $lineData$[i];
-					if (needsCleanup) currentIds.add(line.id);
+			for (let i = 0, len = $lineData$.length; i < len; i++) {
+				const line = $lineData$[i];
+				if (needsCleanup) currentIds.add(line.id);
 
-					let lineCharCount = charCountCache.get(line.id);
-					if (lineCharCount === undefined || cachedLineTexts.get(line.id) !== line.text) {
-						lineCharCount = getCharacterCount(line.text);
-						charCountCache.set(line.id, lineCharCount);
-						cachedLineTexts.set(line.id, line.text);
-					}
-
-					currentCount += lineCharCount;
-
-					if (nextMilestone && currentCount >= nextMilestone) {
-						newMilestones.set(line.id, `Milestone ${nextMilestone} (${currentCount})`);
-						while (currentCount >= nextMilestone) {
-							nextMilestone += $characterMilestone$;
-						}
-					}
+				let lineCharCount = charCountCache.get(line.id);
+				if (lineCharCount === undefined || cachedLineTexts.get(line.id) !== line.text) {
+					lineCharCount = getCharacterCount(line.text);
+					charCountCache.set(line.id, lineCharCount);
+					cachedLineTexts.set(line.id, line.text);
 				}
 
-				if (needsCleanup) {
-					for (const id of charCountCache.keys()) {
-						if (!currentIds.has(id)) {
-							charCountCache.delete(id);
-							cachedLineTexts.delete(id);
-						}
+				currentCount += lineCharCount;
+
+				if (nextMilestone && currentCount >= nextMilestone) {
+					newMilestones.set(line.id, `Milestone ${nextMilestone} (${currentCount})`);
+					while (currentCount >= nextMilestone) {
+						nextMilestone += $characterMilestone$;
 					}
 				}
+			}
 
-				$milestoneLines$ = newMilestones;
-				characters = currentCount;
-				speed = $timeValue$ ? Math.ceil((3600 * characters) / $timeValue$) : 0;
+			if (needsCleanup) {
+				for (const id of charCountCache.keys()) {
+					if (!currentIds.has(id)) {
+						charCountCache.delete(id);
+						cachedLineTexts.delete(id);
+					}
+				}
 			}
-		});
-	});
-	$effect(() => {
-		void [
-			$timeValue$,
-			$showTimer$,
-			$showSpeed$,
-			$showCharacterCount$,
-			$showLineCount$,
-			speed,
-			characters,
-			$lineData$,
-		];
-		untrack(() => {
-			if ($timeValue$ > -1 && ($showTimer$ || $showSpeed$ || $showCharacterCount$ || $showLineCount$)) {
-				buildString($timeValue$, speed, characters, $lineData$.length);
-			} else {
-				statstring = '';
-			}
-		});
+
+			$milestoneLines$ = newMilestones;
+			characters = currentCount;
+		}
 	});
 </script>
 

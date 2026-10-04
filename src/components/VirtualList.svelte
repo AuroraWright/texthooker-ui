@@ -370,24 +370,21 @@
 	});
 
 	$effect(() => {
-		void [itemCount, scrollDirection, estimatedItemSize];
-		untrack(() => {
-			handlePropsChange(itemCount, scrollDirection, estimatedItemSize);
-		});
+		const count = itemCount;
+		const direction = scrollDirection;
+		const size = estimatedItemSize;
+		untrack(() => handlePropsChange(count, direction, size));
 	});
 
 	$effect(() => {
-		void [padding];
-		untrack(() => {
-			if (padding.endsWith('rem')) {
-				const rem = parseFloat(padding);
-				const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-				paddingPx = rem * rootFontSize;
-			} else {
-				paddingPx = parseFloat(padding) || 0;
-			}
-			scheduleUpdateState();
-		});
+		if (padding.endsWith('rem')) {
+			const rem = parseFloat(padding);
+			const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+			paddingPx = rem * rootFontSize;
+		} else {
+			paddingPx = parseFloat(padding) || 0;
+		}
+		scheduleUpdateState();
 	});
 </script>
 

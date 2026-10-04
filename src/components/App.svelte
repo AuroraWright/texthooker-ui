@@ -102,18 +102,16 @@
 	let listHeight = $state(0);
 	let estimatedLineHeight = $state(0);
 	let estimatedLineWidth = $state(0);
-	let lastReflowDimension = $state(0);
+	let lastReflowDimension = 0;
 	let recomputePending = false;
 	let pendingInvalidations = new Set<number>();
-	let prevMilestoneIds = $state(new Set<string>());
+	let prevMilestoneIds = new Set<string>();
 	let initialScrollDone = $state(false);
 	let showSearch = $state(false);
 	let searchInputElement: HTMLInputElement = $state();
 	let searchQuery = $state('');
-	let prevLowerQuery = $state('');
-	let matchIndices: number[] = $state([]);
+	let prevLowerQuery = '';
 	let currentMatchStep = $state(0);
-	let searchJumpIndex: number | undefined = $state(undefined);
 
 	const wakeLockAvailable = 'wakeLock' in navigator;
 	const cjkCharacters = /[\p{scx=Hira}\p{scx=Kana}\p{scx=Han}]/imu;
@@ -261,7 +259,6 @@
 		if (matchIndices.length === 0) return;
 		currentMatchStep = (currentMatchStep + 1) % matchIndices.length;
 		const targetIndex = matchIndices[currentMatchStep];
-		searchJumpIndex = targetIndex;
 
 		const virtualTarget = mapIndex(targetIndex);
 		virtualListComponent?.scrollListToIndex(virtualTarget, 'auto', 'center');
@@ -271,7 +268,6 @@
 		if (matchIndices.length === 0) return;
 		currentMatchStep = (currentMatchStep - 1 + matchIndices.length) % matchIndices.length;
 		const targetIndex = matchIndices[currentMatchStep];
-		searchJumpIndex = targetIndex;
 
 		const virtualTarget = mapIndex(targetIndex);
 		virtualListComponent?.scrollListToIndex(virtualTarget, 'auto', 'center');
@@ -411,7 +407,6 @@
 		if (event.key === 'Escape' && showSearch) {
 			showSearch = false;
 			searchQuery = '';
-			searchJumpIndex = undefined;
 		}
 	}
 
@@ -806,9 +801,9 @@
 	let iconSize = $derived(isSmFactor ? '1.5rem' : '1.25rem');
 	let listScrollBehavior: ScrollBehavior = $derived($enableLineAnimation$ ? 'smooth' : 'auto');
 	$effect(() => {
-		void [$replacements$];
+		const enabled = $replacements$.filter((replacement) => replacement.enabled);
 		untrack(() => {
-			$enabledReplacements$ = $replacements$.filter((replacement) => replacement.enabled);
+			$enabledReplacements$ = enabled;
 			clearReplacementCaches();
 		});
 	});
@@ -816,51 +811,43 @@
 	let pipLines = $derived(pipAvailable && $lineData$ ? $lineData$.slice(-$maxPipLines$) : []);
 	let estimatedItemSize = $derived($displayVertical$ ? estimatedLineWidth : estimatedLineHeight);
 	$effect(() => {
-		void [pipWindow, $theme$, $customCSS$];
-		untrack(() => {
-			if (pipWindow) {
-				pipWindow.document.body.dataset.theme = $theme$;
-
-				applyCustomCSS(pipWindow.document, $customCSS$);
-			}
-		});
+		if (pipWindow) {
+			pipWindow.document.body.dataset.theme = $theme$;
+			applyCustomCSS(pipWindow.document, $customCSS$);
+		}
 	});
 	$effect(() => {
-		void [$showSpinner$];
-		untrack(() => {
-			if (!$showSpinner$ && !initialScrollDone) {
-				initialScrollDone = true;
-				tick().then(() => executeUpdateScroll(true));
-			}
-		});
+		if (!$showSpinner$ && !untrack(() => initialScrollDone)) {
+			initialScrollDone = true;
+			tick().then(() => executeUpdateScroll(true));
+		}
 	});
 	$effect(() => {
-		void [$displayVertical$, listHeight, listWidth];
-		untrack(() => {
-			const currentReflowDimension = $displayVertical$ ? listHeight : listWidth;
-
-			if (currentReflowDimension !== lastReflowDimension) {
-				if (lastReflowDimension !== 0) {
+		const currentReflowDimension = $displayVertical$ ? listHeight : listWidth;
+		if (currentReflowDimension !== lastReflowDimension) {
+			if (lastReflowDimension !== 0) {
+				untrack(() => {
 					lineSizes.clear();
 					virtualListComponent?.clearCache();
 					tick().then(remeasureMountedLines);
-				}
-				lastReflowDimension = currentReflowDimension;
+				});
 			}
-		});
+			lastReflowDimension = currentReflowDimension;
+		}
+	});
+	const lineLayoutSettings = $derived({
+		vertical: $displayVertical$,
+		reversed: $reverseLineOrder$,
+		fontSize: $fontSize$,
+		font: $onlineFont$,
+		padding: $linePadding$,
+		points: $showLinePoints$,
+		customCSS: $customCSS$,
+		preserveWhitespace: $preserveWhitespace$,
+		milestone: $characterMilestone$,
 	});
 	$effect(() => {
-		void [
-			$displayVertical$,
-			$reverseLineOrder$,
-			$fontSize$,
-			$onlineFont$,
-			$linePadding$,
-			$showLinePoints$,
-			$customCSS$,
-			$preserveWhitespace$,
-			$characterMilestone$,
-		];
+		lineLayoutSettings;
 		untrack(() => {
 			lineSizes.clear();
 			virtualListComponent?.clearCache();
@@ -868,19 +855,16 @@
 		});
 	});
 	$effect(() => {
-		void [$onlineFont$];
-		untrack(() => {
-			if ($onlineFont$ && typeof document !== 'undefined' && document.fonts) {
-				document.fonts.ready.then(() => {
-					tick().then(remeasureMountedLines);
-				});
-			}
-		});
+		if ($onlineFont$ && document.fonts) {
+			document.fonts.ready.then(() => {
+				tick().then(remeasureMountedLines);
+			});
+		}
 	});
 	$effect(() => {
-		void [$milestoneLines$, $lineData$];
+		const currentMilestoneMap = $milestoneLines$;
+		const lines = $lineData$;
 		untrack(() => {
-			const currentMilestoneMap = $milestoneLines$;
 			const currentIds = new Set(currentMilestoneMap ? currentMilestoneMap.keys() : []);
 			const changedLineIds: string[] = [];
 
@@ -904,7 +888,7 @@
 					if (lineSizes.has(id)) {
 						lineSizes.delete(id);
 						hasCachedChanges = true;
-						const lineIdx = $lineData$.findIndex((l) => l.id === id);
+						const lineIdx = lines.findIndex((l) => l.id === id);
 						if (lineIdx !== -1) {
 							const vIdx = mapIndex(lineIdx);
 							invalidVirtualIndices.push(vIdx);
@@ -920,36 +904,31 @@
 		});
 	});
 	let lowerQuery = $derived(searchQuery.trim().toLowerCase());
+	let matchIndices = $derived(
+		lowerQuery && $lineData$
+			? $lineData$
+					.map((line, index) => (line.text.toLowerCase().includes(lowerQuery) ? index : -1))
+					.filter((index) => index !== -1)
+			: [],
+	);
+	let searchJumpIndex = $derived(matchIndices[currentMatchStep]);
 	$effect(() => {
-		void [lowerQuery, $lineData$, currentMatchStep];
+		const query = lowerQuery;
+		const matchCount = matchIndices.length;
 		untrack(() => {
-			if (lowerQuery && $lineData$) {
-				if (lowerQuery !== prevLowerQuery) {
-					currentMatchStep = 0;
-					prevLowerQuery = lowerQuery;
-				}
-
-				matchIndices = $lineData$
-					.map((l, i) => (l.text.toLowerCase().includes(lowerQuery) ? i : -1))
-					.filter((i) => i !== -1);
-
-				if (currentMatchStep >= matchIndices.length) {
-					currentMatchStep = Math.max(0, matchIndices.length - 1);
-				}
-
-				searchJumpIndex = matchIndices.length > 0 ? matchIndices[currentMatchStep] : undefined;
-
-				if (searchJumpIndex !== undefined) {
-					const virtualTarget = mapIndex(searchJumpIndex);
-					virtualListComponent?.scrollListToIndex(virtualTarget, 'auto', 'center');
-				}
-			} else {
-				matchIndices = [];
+			if (!query || query !== prevLowerQuery) {
 				currentMatchStep = 0;
-				searchJumpIndex = undefined;
-				prevLowerQuery = lowerQuery;
+			} else if (currentMatchStep >= matchCount) {
+				currentMatchStep = Math.max(0, matchCount - 1);
 			}
+			prevLowerQuery = query;
 		});
+	});
+	$effect(() => {
+		const target = searchJumpIndex;
+		if (target !== undefined) {
+			untrack(() => virtualListComponent?.scrollListToIndex(mapIndex(target), 'auto', 'center'));
+		}
 	});
 </script>
 
@@ -1005,7 +984,6 @@
 			onclick={() => {
 				showSearch = false;
 				searchQuery = '';
-				searchJumpIndex = undefined;
 			}}
 		>
 			<Icon path={mdiCancel} width="1.25rem" height="1.25rem" />

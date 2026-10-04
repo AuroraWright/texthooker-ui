@@ -3,7 +3,6 @@
 		onapplyReplacements?: () => void;
 	}
 	let { onapplyReplacements }: Props = $props();
-	import { untrack } from 'svelte';
 
 	import { mdiPlus } from '@mdi/js';
 	import { replacements$ } from '../stores/stores';
@@ -21,10 +20,7 @@
 	}
 	let hasReplacements = $derived(!!$replacements$.length);
 	$effect(() => {
-		void [$replacements$];
-		untrack(() => {
-			resetEditMode($replacements$);
-		});
+		resetEditMode($replacements$);
 	});
 </script>
 
