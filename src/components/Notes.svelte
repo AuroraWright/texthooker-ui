@@ -1,11 +1,14 @@
 <script lang="ts">
+	import { dataState } from '../stores/data-state.svelte';
+
+	import { settings } from '../stores/settings.svelte';
+
 	import { mdiClose } from '@mdi/js';
-	import { notesOpen$, userNotes$ } from '../stores/stores';
 	import { dummyFn } from '../util';
 	import Icon from './Icon.svelte';
 
 	function handleBlur(event: FocusEvent) {
-		$userNotes$ = (event.target as HTMLTextAreaElement).value;
+		dataState.userNotes = (event.target as HTMLTextAreaElement).value;
 	}
 </script>
 
@@ -15,7 +18,7 @@
 		role="button"
 		aria-label="Close notes"
 		class="flex cursor-pointer items-end md:items-center"
-		onclick={() => ($notesOpen$ = false)}
+		onclick={() => (settings.notesOpen = false)}
 		onkeyup={dummyFn}
 	>
 		<Icon path={mdiClose} />
@@ -24,6 +27,6 @@
 <textarea
 	class="flex-1 overflow-auto ml-10 mr-2 mb-4 p-1 pb-2"
 	style="resize: none;"
-	value={$userNotes$}
+	value={dataState.userNotes}
 	onblur={handleBlur}
 ></textarea>

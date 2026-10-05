@@ -2,8 +2,10 @@
 	import { untrack } from 'svelte';
 
 	import { onMount, tick } from 'svelte';
+	import type { VirtualListController } from '../virtual-list-controller';
 
 	interface Props {
+		controller: VirtualListController;
 		width?: string;
 		height?: string;
 		itemCount?: number;
@@ -15,6 +17,7 @@
 	}
 
 	let {
+		controller,
 		width = '100%',
 		height = '100%',
 		itemCount = 0,
@@ -47,7 +50,7 @@
 	let _prevScrollDirection = untrack(() => scrollDirection);
 	let _prevEstimatedItemSize = untrack(() => estimatedItemSize);
 
-	export function invalidateIndices(indices: number[]) {
+	function invalidateIndices(indices: number[]) {
 		if (!indices || indices.length === 0) return;
 
 		let lowestChangedIndex = offsetCache.length;
@@ -63,7 +66,7 @@
 		updateState();
 	}
 
-	export function removeIndices(indices: number[]) {
+	function removeIndices(indices: number[]) {
 		if (!indices || indices.length === 0) return;
 
 		const sortedIndices = [...indices].sort((a, b) => b - a);
@@ -85,7 +88,7 @@
 		updateState();
 	}
 
-	export function insertIndices(indices: number[]) {
+	function insertIndices(indices: number[]) {
 		if (!indices || indices.length === 0) return;
 
 		const sortedIndices = [...indices].sort((a, b) => a - b);
@@ -107,7 +110,7 @@
 		updateState();
 	}
 
-	export function shiftIndices(shiftAmount: number) {
+	function shiftIndices(shiftAmount: number) {
 		if (!shiftAmount || shiftAmount <= 0) return;
 
 		const newEmptySlots = new Array(shiftAmount).fill(undefined);
@@ -120,14 +123,14 @@
 		updateState();
 	}
 
-	export function clearCache() {
+	function clearCache() {
 		sizeCache = [];
 		offsetCache = [0];
 		lastTotalSize = 0;
 		updateState();
 	}
 
-	export function scrollListToIndex(
+	function scrollListToIndex(
 		index: number | undefined,
 		behavior: ScrollBehavior = 'auto',
 		alignment: 'start' | 'center' | 'end' | 'auto' = 'auto',
@@ -338,7 +341,7 @@
 			return;
 		}
 
-		scheduleUpdateState();
+		updateState();
 	}
 
 	function scheduleUpdateState() {
@@ -350,6 +353,17 @@
 			});
 		}
 	}
+
+	$effect(() =>
+		controller.attach({
+			invalidateIndices,
+			removeIndices,
+			insertIndices,
+			shiftIndices,
+			clearCache,
+			scrollListToIndex,
+		}),
+	);
 
 	onMount(() => {
 		updateState();

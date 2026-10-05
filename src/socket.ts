@@ -1,14 +1,6 @@
-import { BehaviorSubject, NEVER, Subscription, filter, switchMap } from 'rxjs';
-import {
-	continuousReconnect$,
-	newLine$,
-	reconnectSecondarySocket$,
-	reconnectSocket$,
-	secondarySocketState$,
-	secondaryWebsocketUrl$,
-	socketState$,
-	websocketUrl$,
-} from './stores/stores';
+import { setSocketState } from './stores/state-actions';
+import { settings } from './stores/settings.svelte';
+import { incomingLine, reconnectSecondarySocket, reconnectPrimarySocket } from './events';
 
 import { LineType } from './types';
 
@@ -17,31 +9,19 @@ export class SocketConnection {
 
 	private socket: WebSocket | undefined;
 
-	private socketState: BehaviorSubject<number>;
+	private unsubscribeReconnect: () => void;
 
-	private subscriptions: Subscription[] = [];
+	constructor(private isPrimary = true, private onStateChange?: (state: number) => void) {
+		this.websocketUrl = isPrimary ? settings.websocketUrl : settings.secondaryWebsocketUrl;
+		this.unsubscribeReconnect = (isPrimary ? reconnectPrimarySocket : reconnectSecondarySocket).subscribe(() => {
+			if (settings.continuousReconnect && this.socket?.readyState === 3) this.reloadSocket();
+		});
+	}
 
-	constructor(isPrimary = true) {
-		this.socketState = isPrimary ? socketState$ : secondarySocketState$;
-		this.subscriptions.push(
-			(isPrimary ? websocketUrl$ : secondaryWebsocketUrl$).subscribe((websocketUrl) => {
-				if (websocketUrl !== this.websocketUrl) {
-					this.websocketUrl = websocketUrl;
-					this.reloadSocket();
-				}
-			}),
-			continuousReconnect$
-				.pipe(
-					switchMap((continuousReconnect) =>
-						continuousReconnect
-							? (isPrimary ? reconnectSocket$ : reconnectSecondarySocket$).pipe(
-									filter(() => this.socket?.readyState === 3)
-							  )
-							: NEVER
-					)
-				)
-				.subscribe(() => this.reloadSocket())
-		);
+	setUrl(websocketUrl: string) {
+		if (websocketUrl === this.websocketUrl) return;
+		this.websocketUrl = websocketUrl;
+		this.reloadSocket();
 	}
 
 	connect() {
@@ -50,11 +30,11 @@ export class SocketConnection {
 		}
 
 		if (!this.websocketUrl) {
-			this.socketState.next(3);
+			this.updateState(3);
 			return;
 		}
 
-		this.socketState.next(0);
+		this.updateState(0);
 
 		try {
 			this.socket = new WebSocket(this.websocketUrl);
@@ -62,7 +42,7 @@ export class SocketConnection {
 			this.socket.onclose = this.updateSocketState.bind(this);
 			this.socket.onmessage = this.handleMessage.bind(this);
 		} catch (error) {
-			this.socketState.next(3);
+			this.updateState(3);
 		}
 	}
 
@@ -73,11 +53,10 @@ export class SocketConnection {
 	}
 
 	cleanUp() {
+		this.onStateChange = undefined;
 		this.disconnect();
 
-		for (let index = 0, { length } = this.subscriptions; index < length; index += 1) {
-			this.subscriptions[index].unsubscribe();
-		}
+		this.unsubscribeReconnect();
 	}
 
 	private reloadSocket() {
@@ -91,7 +70,12 @@ export class SocketConnection {
 			return;
 		}
 
-		this.socketState.next(this.socket.readyState);
+		this.updateState(this.socket.readyState);
+	}
+
+	private updateState(state: number) {
+		setSocketState(this.isPrimary, state);
+		this.onStateChange?.(state);
 	}
 
 	private handleMessage(event: MessageEvent) {
@@ -103,6 +87,6 @@ export class SocketConnection {
 			// no-op
 		}
 
-		newLine$.next([line, LineType.SOCKET]);
+		incomingLine.emit([line, LineType.SOCKET]);
 	}
 }

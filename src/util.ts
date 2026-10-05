@@ -1,18 +1,9 @@
-import { filter, map, pipe } from 'rxjs';
-
 import type { ReplacementItem } from './types';
 
 const regexCache = new Map<string, RegExp>();
 const replaceStringCache = new Map<string, string>();
 
 export function dummyFn() {}
-
-export function reduceToEmptyString() {
-	return pipe(
-		map((): '' => ''),
-		filter((_, index) => !index)
-	);
-}
 
 export function updateScroll(
 	window: Window,

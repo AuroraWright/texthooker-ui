@@ -3,13 +3,13 @@
 
 	interface Props {
 		onclose?: () => void;
-		icon: string | undefined;
-		message: string | undefined;
+		icon?: string;
+		message?: string;
 		type?: string;
 		showCancel?: boolean;
 		askForData?: string;
-		dataValue: string | number | undefined;
-		callback: <T>(param: { canceled: boolean; data: T }) => void;
+		dataValue?: string | number;
+		callback?: (param: { canceled: boolean; data: string | number | undefined }) => void;
 	}
 
 	let {

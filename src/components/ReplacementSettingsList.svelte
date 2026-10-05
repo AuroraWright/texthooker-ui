@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { dataState } from '../stores/data-state.svelte';
+
 	interface Props {
 		onedit?: (value: ReplacementItem | undefined) => void;
 		onapplyReplacements?: () => void;
@@ -14,15 +16,15 @@
 	} from '@mdi/js';
 	import Sortable, { Swap } from 'sortablejs';
 	import { onMount } from 'svelte';
-	import { enabledReplacements$, lineData$, replacements$ } from '../stores/stores';
 	import type { ReplacementItem } from '../types';
 	import Icon from './Icon.svelte';
 
 	let sortableInstance: Sortable;
+	let dragNodes: ChildNode[] = [];
 	let listContainer: HTMLDivElement = $state();
-	let listItems = $state(JSON.parse(JSON.stringify($replacements$)));
+	let listItems = $derived(dataState.replacements);
 
-	let canApplyReplacements = $derived(!!$lineData$.length && !!$enabledReplacements$.length);
+	let canApplyReplacements = $derived(!!dataState.lines.length && !!dataState.enabledReplacements.length);
 
 	onMount(() => {
 		try {
@@ -35,10 +37,10 @@
 			swap: true,
 			swapClass: 'swap',
 			animation: 150,
-			store: {
-				get: getSortableList,
-				set: onUpdateList,
+			onChoose: () => {
+				dragNodes = Array.from(listContainer.childNodes);
 			},
+			onEnd: onUpdateList,
 		});
 
 		return () => sortableInstance?.destroy();
@@ -47,23 +49,19 @@
 	function onToggle(newValue: boolean) {
 		const sortedList = getSortedList();
 
-		listItems = sortedList.map((replacement) => ({ ...replacement, enabled: newValue }));
-		$replacements$ = $state.snapshot(listItems);
+		dataState.replacements = sortedList.map((replacement) => ({ ...replacement, enabled: newValue }));
 	}
 
 	function onUpdateList() {
-		$replacements$ = $state.snapshot(getSortedList());
+		const order = getSortedList();
+		// Restore complete keyed rows, including Svelte's markers, before its update.
+		for (const node of dragNodes) listContainer.appendChild(node);
+		dragNodes = [];
+		dataState.replacements = order;
 	}
 
 	function onReplaceItems(newReplacements: ReplacementItem[]) {
-		listItems = newReplacements;
-		$replacements$ = newReplacements;
-
-		sortableInstance.sort(getSortableList(), false);
-	}
-
-	function getSortableList() {
-		return [...listItems.map((replacments) => replacments.pattern)];
+		dataState.replacements = newReplacements;
 	}
 
 	function getSortedList() {
@@ -110,11 +108,20 @@
 					title="Remove"
 					class="hover:text-primary"
 					onclick={() =>
-						onReplaceItems($replacements$.filter((entry) => entry.pattern !== replacement.pattern))}
+						onReplaceItems(dataState.replacements.filter((entry) => entry.pattern !== replacement.pattern))}
 				>
 					<Icon path={mdiTrashCanOutline} height="1rem" />
 				</button>
-				<input type="checkbox" class="ml-1" bind:checked={replacement.enabled} onchange={onUpdateList} />
+				<input
+					type="checkbox"
+					class="ml-1"
+					checked={replacement.enabled}
+					onchange={(event) => {
+						const enabled = event.currentTarget.checked;
+						dataState.replacements = listItems.map((entry) =>
+							entry.pattern === replacement.pattern ? { ...entry, enabled } : entry);
+					}}
+				/>
 			</div>
 		</div>
 	{/each}

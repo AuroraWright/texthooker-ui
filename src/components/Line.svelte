@@ -1,17 +1,11 @@
 <script lang="ts">
+	import { settings } from '../stores/settings.svelte';
+	import { lineStatistics } from '../stores/line-statistics.svelte';
+
 	import { mdiTrophy } from '@mdi/js';
 	import { untrack, onDestroy, onMount, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
-	import {
-		displayVertical$,
-		enableLineAnimation$,
-		milestoneLines$,
-		preserveWhitespace$,
-		linePadding$,
-		showLinePoints$,
-		newLines,
-		pipNewLines,
-	} from '../stores/stores';
+	import { newLines, pipNewLines } from '../stores/stores';
 	import type { LineItem, LineItemEditEvent } from '../types';
 	import { dummyFn, newLineCharacter } from '../util';
 	import Icon from './Icon.svelte';
@@ -44,7 +38,7 @@
 	let originalText = '';
 	let isEditable = $state(false);
 
-	let isVerticalDisplay = $derived(!pipWindow && $displayVertical$);
+	let isVerticalDisplay = $derived(!pipWindow && settings.displayVertical);
 
 	onMount(() => {
 		if (isNew) {
@@ -119,7 +113,7 @@
 	}
 
 	function lineFly(node: HTMLElement, _params?: unknown) {
-		if (!$enableLineAnimation$ || !isNew) {
+		if (!settings.enableLineAnimation || !isNew) {
 			return { duration: 0, delay: 0 };
 		}
 		return fly(node, { x: isVerticalDisplay ? 100 : -100, duration: 250 });
@@ -131,16 +125,16 @@
 	class="my-2 cursor-default border-2"
 	class:px-2={!isVerticalDisplay}
 	class:py-2={isVerticalDisplay}
-	style:padding-top={!isVerticalDisplay ? `${$linePadding$}rem` : undefined}
-	style:padding-bottom={!isVerticalDisplay ? `${$linePadding$}rem` : undefined}
-	style:padding-left={isVerticalDisplay ? `${$linePadding$}rem` : undefined}
-	style:padding-right={isVerticalDisplay ? `${$linePadding$}rem` : undefined}
+	style:padding-top={!isVerticalDisplay ? `${settings.linePadding}rem` : undefined}
+	style:padding-bottom={!isVerticalDisplay ? `${settings.linePadding}rem` : undefined}
+	style:padding-left={isVerticalDisplay ? `${settings.linePadding}rem` : undefined}
+	style:padding-right={isVerticalDisplay ? `${settings.linePadding}rem` : undefined}
 	class:border-transparent={!isSelected}
 	class:cursor-text={isEditable}
 	class:border-primary={isSelected}
 	class:border-accent-focus={isEditable}
-	class:whitespace-pre-wrap={$preserveWhitespace$}
-	class:show-bullet={$showLinePoints$}
+	class:whitespace-pre-wrap={settings.preserveWhitespace}
+	class:show-bullet={settings.showLinePoints}
 	contenteditable={isEditable}
 	ondblclick={handleDblClick}
 	onkeyup={dummyFn}
@@ -164,21 +158,21 @@
 	{/if}
 </p>
 {@html newLineCharacter}
-{#if $milestoneLines$.has(line.id)}
+{#if lineStatistics.milestoneLines.has(line.id)}
 	<div
 		class="flex justify-center text-xs my-2 py-2 border-primary border-dashed milestone"
-		class:border-x-2={$displayVertical$}
-		class:border-y-2={!$displayVertical$}
+		class:border-x-2={settings.displayVertical}
+		class:border-y-2={!settings.displayVertical}
 		class:px-2={!isVerticalDisplay}
 		class:py-2={isVerticalDisplay}
-		style:padding-top={!isVerticalDisplay ? `${$linePadding$}rem` : undefined}
-		style:padding-bottom={!isVerticalDisplay ? `${$linePadding$}rem` : undefined}
-		style:padding-left={isVerticalDisplay ? `${$linePadding$}rem` : undefined}
-		style:padding-right={isVerticalDisplay ? `${$linePadding$}rem` : undefined}
+		style:padding-top={!isVerticalDisplay ? `${settings.linePadding}rem` : undefined}
+		style:padding-bottom={!isVerticalDisplay ? `${settings.linePadding}rem` : undefined}
+		style:padding-left={isVerticalDisplay ? `${settings.linePadding}rem` : undefined}
+		style:padding-right={isVerticalDisplay ? `${settings.linePadding}rem` : undefined}
 	>
 		<div class="flex items-center">
-			<Icon class={$displayVertical$ ? '' : 'mr-2'} path={mdiTrophy}></Icon>
-			<span class:mt-2={$displayVertical$}>{$milestoneLines$.get(line.id)}</span>
+			<Icon class={settings.displayVertical ? '' : 'mr-2'} path={mdiTrophy}></Icon>
+			<span class:mt-2={settings.displayVertical}>{lineStatistics.milestoneLines.get(line.id)}</span>
 		</div>
 	</div>
 	{@html newLineCharacter}

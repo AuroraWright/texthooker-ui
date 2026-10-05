@@ -1,4 +1,12 @@
 <script lang="ts">
+	import { dataState } from '../stores/data-state.svelte';
+	import { cacheLineCharacterCount, cacheLineCharacterCounts } from '../stores/line-character-counts';
+	import { dialogState } from '../stores/dialog-state.svelte';
+	import { appState } from '../stores/app-state.svelte';
+
+	import { settings } from '../stores/settings.svelte';
+	import { getCurrentSettings, updateSettingsWithPreset } from '../stores/presets';
+
 	import {
 		mdiClose,
 		mdiDatabaseSync,
@@ -9,71 +17,9 @@
 		mdiWeatherNight,
 		mdiWhiteBalanceSunny,
 	} from '@mdi/js';
-	import { tick } from 'svelte';
 	import { removeIDBItem } from '../idb';
-	import {
-		actionHistory$,
-		adjustTimerOnAfk$,
-		afkTimer$,
-		allowNewLineDuringPause$,
-		allowPasteDuringPause$,
-		autoStartTimerDuringPause$,
-		autoStartTimerDuringPausePaste$,
-		blockCopyOnPage$,
-		blurStats$,
-		characterMilestone$,
-		continuousReconnect$,
-		customCSS$,
-		dialogOpen$,
-		displayVertical$,
-		enableAfkBlur$,
-		enableAfkBlurRestart$,
-		enableExternalClipboardMonitor$,
-		enableLineAnimation$,
-		enablePaste$,
-		filterNonCJKLines$,
-		flashOnMissedLine$,
-		fontSize$,
-		linePadding$,
-		lastSettingPreset$,
-		lineData$,
-		maxLines$,
-		maxPipLines$,
-		mergeEqualLineStarts$,
-		milestoneLines$,
-		newLine$,
-		onlineFont$,
-		openDialog$,
-		persistActionHistory$,
-		persistLines$,
-		persistNotes$,
-		persistStats$,
-		preserveWhitespace$,
-		preventGlobalDuplicate$,
-		preventLastDuplicate$,
-		reconnectSecondarySocket$,
-		reconnectSocket$,
-		removeAllWhitespace$,
-		resetAllData,
-		reverseLineOrder$,
-		secondaryWebsocketUrl$,
-		settingPresets$,
-		showCharacterCount$,
-		showConnectionErrors$,
-		showConnectionIcon$,
-		showLineCount$,
-		showLinePoints$,
-		showPresetQuickSwitch$,
-		showSpeed$,
-		showSpinner$,
-		showTimer$,
-		skipResetConfirmations$,
-		theme$,
-		timeValue$,
-		userNotes$,
-		websocketUrl$,
-		windowTitle$,
-	} from '../stores/stores';
+	import { resetAllData } from '../stores/stores';
+	import { incomingLine, reconnectSecondarySocket, reconnectPrimarySocket } from '../events';
 	import {
 		LineType,
 		OnlineFont,
@@ -91,6 +37,7 @@
 	import ReplacementSettings from './ReplacementSettings.svelte';
 
 	interface Props {
+		onreset: (linesOnly: boolean) => void | Promise<void>;
 		onlayoutChange?: () => void;
 		onmaxLinesChange?: () => void;
 		onlinesRemoved?: (ids: string[], indices: number[]) => void;
@@ -104,6 +51,7 @@
 	}
 
 	let {
+		onreset,
 		onlayoutChange,
 		onmaxLinesChange,
 		onlinesRemoved,
@@ -115,42 +63,6 @@
 		settingsElement,
 		pipAvailable,
 	}: Props = $props();
-
-	export async function handleReset(linesOnly: boolean) {
-		if (!$skipResetConfirmations$) {
-			const { canceled } = await new Promise<DialogResult>((resolve) => {
-				$openDialog$ = {
-					icon: mdiHelpCircle,
-					message: linesOnly
-						? 'All displayed and stored Lines will be cleared'
-						: 'Clear stored Lines + set Timer to 00:00:00',
-					callback: resolve,
-				};
-			});
-
-			if (canceled) {
-				return;
-			}
-		}
-
-		$lineData$ = [];
-		selectedLineIds = [];
-		window.localStorage.removeItem('bannou-texthooker-lineData');
-		await removeIDBItem('bannou-texthooker-lineData');
-
-		if (!linesOnly) {
-			$timeValue$ = 0;
-			$userNotes$ = '';
-			$actionHistory$ = [];
-			window.localStorage.removeItem('bannou-texthooker-timeValue');
-			window.localStorage.removeItem('bannou-texthooker-userNotes');
-			await removeIDBItem('bannou-texthooker-userNotes');
-			window.localStorage.removeItem('bannou-texthooker-actionHistory');
-			await removeIDBItem('bannou-texthooker-actionHistory');
-		}
-
-		ondataResetOrImported?.();
-	}
 
 	const onlineFonts = [
 		OnlineFont.OFF,
@@ -164,35 +76,21 @@
 	let dataFileInput: HTMLInputElement = $state();
 	let settingsFileInput: HTMLInputElement = $state();
 	let presetFileInput: HTMLInputElement = $state();
-	let presetComponent: ReturnType<typeof Presets> = $state();
-	let clipboardMutationObserver: MutationObserver | undefined;
 
 	function handleSecondaryWebsocketChange(event: Event) {
 		const target = event.target as HTMLInputElement;
 
 		target.setCustomValidity('');
 
-		if (secondaryWebsocketUrl === websocketUrl) {
+		if (target.value === settings.websocketUrl) {
 			target.setCustomValidity('Duplicate Websocket');
-			secondaryWebsocketUrl = '';
-			$secondaryWebsocketUrl$ = '';
+			target.value = '';
+			settings.secondaryWebsocketUrl = '';
 		} else {
-			$secondaryWebsocketUrl$ = target.value;
+			settings.secondaryWebsocketUrl = target.value;
 		}
 
 		target.reportValidity();
-	}
-
-	function updateExternalClipboardMonitor(enableExternalClipboardMonitor: boolean) {
-		if (enableExternalClipboardMonitor && !clipboardMutationObserver) {
-			tick().then(() => {
-				clipboardMutationObserver = new MutationObserver(clipboardMutationObserverCallback);
-				clipboardMutationObserver.observe(document.body, { childList: true });
-			});
-		} else if (!enableExternalClipboardMonitor && clipboardMutationObserver) {
-			clipboardMutationObserver.disconnect();
-			clipboardMutationObserver = undefined;
-		}
 	}
 
 	function clipboardMutationObserverCallback(mutations: MutationRecord[]) {
@@ -203,7 +101,7 @@
 				const addedNode = addedNodes[index2] as HTMLElement;
 
 				if (addedNode?.tagName === 'P') {
-					newLine$.next([addedNode.textContent, LineType.EXTERNAL]);
+					incomingLine.emit([addedNode.textContent, LineType.EXTERNAL]);
 					addedNode.remove();
 				}
 			}
@@ -214,13 +112,13 @@
 		const target = event.target as any;
 
 		if (
-			!$showSpinner$ &&
+			!appState.showSpinner &&
 			target !== settingsElement &&
 			target.parentElement !== settingsElement &&
 			target !== dataFileInput &&
 			target !== settingsFileInput &&
 			target !== presetFileInput &&
-			!$dialogOpen$
+			!appState.dialogOpen
 		) {
 			settingsOpen = false;
 		}
@@ -228,13 +126,13 @@
 
 	async function handleSetTimer() {
 		const { canceled, data } = await new Promise<DialogResult<string>>((resolve) => {
-			$openDialog$ = {
+			dialogState.open({
 				icon: mdiHelpCircle,
 				askForData: 'text',
 				dataValue: '00:00:00',
 				message: 'New Time',
 				callback: resolve,
-			};
+			});
 		});
 
 		if (canceled) {
@@ -243,27 +141,27 @@
 
 		if (!/^[\d]{1,}:[\d]{1,2}:[\d]{1,2}$/.test(data)) {
 			return new Promise<DialogResult<string>>((resolve) => {
-				$openDialog$ = {
+				dialogState.open({
 					icon: mdiClose,
 					type: 'error',
 					message: 'Invalid Time value (x:xx:xx)',
 					showCancel: false,
 					callback: resolve,
-				};
+				});
 			});
 		}
 
-		$timeValue$ = timeStringToSeconds(data);
+		settings.timeValue = timeStringToSeconds(data);
 	}
 
 	async function handleResetTimer() {
-		if (!$skipResetConfirmations$) {
+		if (!settings.skipResetConfirmations) {
 			const { canceled } = await new Promise<DialogResult>((resolve) => {
-				$openDialog$ = {
+				dialogState.open({
 					icon: mdiHelpCircle,
 					message: 'Timer will be set to 00:00:00',
 					callback: resolve,
-				};
+				});
 			});
 
 			if (canceled) {
@@ -271,7 +169,7 @@
 			}
 		}
 
-		$timeValue$ = 0;
+		settings.timeValue = 0;
 	}
 
 	async function handleExportImportData(event: MouseEvent) {
@@ -279,10 +177,10 @@
 			await handleImport(dataFileInput, 'Existing Data will be overwritten');
 		} else {
 			handleExport<ExportedData>('texthooker-ui_data.json', {
-				'bannou-texthooker-timeValue': $timeValue$,
-				'bannou-texthooker-userNotes': $userNotes$,
-				'bannou-texthooker-lineData': $lineData$,
-				'bannou-texthooker-actionHistory': $actionHistory$,
+				'bannou-texthooker-timeValue': settings.timeValue,
+				'bannou-texthooker-userNotes': dataState.userNotes,
+				'bannou-texthooker-lineData': dataState.lines,
+				'bannou-texthooker-actionHistory': dataState.actionHistory,
 			});
 		}
 	}
@@ -292,9 +190,9 @@
 			await handleImport(settingsFileInput, 'Presets, Settings etc. will be overwritten');
 		} else {
 			handleExport<ExportedSettings>('texthooker-ui_settings.json', {
-				currentSettings: presetComponent.getCurrentSettings(),
-				settingPresets: $settingPresets$,
-				lastSettingsPreset: $lastSettingPreset$,
+				currentSettings: getCurrentSettings(),
+				settingPresets: dataState.settingPresets,
+				lastSettingsPreset: settings.lastSettingPreset,
 			});
 		}
 	}
@@ -302,8 +200,8 @@
 	async function handleExportImportPreset(event: MouseEvent) {
 		if (event.altKey) {
 			await handleImport(presetFileInput, 'Preset will be overwritten or otherwise added');
-		} else if ($lastSettingPreset$) {
-			const existingEntry = $settingPresets$.find((entry) => entry.name === $lastSettingPreset$);
+		} else if (settings.lastSettingPreset) {
+			const existingEntry = dataState.settingPresets.find((entry) => entry.name === settings.lastSettingPreset);
 
 			if (existingEntry) {
 				handleExport<SettingPreset>('texthooker-ui_preset.json', {
@@ -316,11 +214,11 @@
 
 	async function handleDataFileChange() {
 		const data = await loadFile<ExportedData>(dataFileInput).catch(({ message }) => {
-			$openDialog$ = {
+			dialogState.open({
 				type: 'error',
 				message,
 				showCancel: false,
-			};
+			});
 		});
 
 		if (data) {
@@ -331,16 +229,17 @@
 
 				switch (key) {
 					case 'bannou-texthooker-timeValue':
-						$timeValue$ = value;
+						settings.timeValue = value;
 						break;
 					case 'bannou-texthooker-userNotes':
-						$userNotes$ = value;
+						dataState.userNotes = value;
 						break;
 					case 'bannou-texthooker-lineData':
-						$lineData$ = value;
+						cacheLineCharacterCounts(value);
+						dataState.lines = value;
 						break;
 					case 'bannou-texthooker-actionHistory':
-						$actionHistory$ = value;
+						dataState.actionHistory = value;
 						break;
 					default:
 						break;
@@ -354,19 +253,19 @@
 
 	async function handleSettingsFileChange() {
 		const data = await loadFile<ExportedSettings>(settingsFileInput).catch(({ message }) => {
-			$openDialog$ = {
+			dialogState.open({
 				type: 'error',
 				message,
 				showCancel: false,
-			};
+			});
 		});
 
 		if (data) {
-			$settingPresets$ = data.settingPresets || [];
-			$lastSettingPreset$ = data.lastSettingsPreset || '';
+			dataState.settingPresets = data.settingPresets || [];
+			settings.lastSettingPreset = data.lastSettingsPreset || '';
 
 			if (data.currentSettings) {
-				presetComponent.updateSettingsWithPreset({ name: '', settings: data.currentSettings }, false);
+				updateSettingsWithPreset({ name: '', settings: data.currentSettings }, false, onlayoutChange);
 			}
 		}
 
@@ -375,41 +274,40 @@
 
 	async function handlePresetFileChange() {
 		const data = await loadFile<SettingPreset>(presetFileInput).catch(({ message }) => {
-			$openDialog$ = {
+			dialogState.open({
 				type: 'error',
 				message,
 				showCancel: false,
-			};
+			});
 		});
 
 		if (data && data.name && data.settings) {
-			const presetIndex = $settingPresets$.findIndex((entry) => entry.name === data.name);
+			const presetIndex = dataState.settingPresets.findIndex((entry) => entry.name === data.name);
 
 			if (presetIndex > -1) {
-				$settingPresets$[presetIndex] = data;
-				$settingPresets$ = [...$settingPresets$];
+				dataState.settingPresets = dataState.settingPresets.map((preset, index) => index === presetIndex ? data : preset);
 			} else {
-				$settingPresets$ = [...$settingPresets$, data];
+				dataState.settingPresets = [...dataState.settingPresets, data];
 			}
 
-			$lastSettingPreset$ = data.name;
-			presetComponent.updateSettingsWithPreset(data);
+			settings.lastSettingPreset = data.name;
+			updateSettingsWithPreset(data, true, onlayoutChange);
 		}
 
 		presetFileInput.value = null;
 	}
 
-	async function handlePersistenceChange(settingEnabled: boolean, message: String, storageKey: string) {
+	async function handlePersistenceChange(settingEnabled: boolean, message: string, storageKey: string) {
 		if (settingEnabled) {
 			return;
 		}
 
 		const { canceled } = await new Promise<DialogResult>((resolve) => {
-			$openDialog$ = {
+			dialogState.open({
 				icon: mdiHelpCircle,
 				message,
 				callback: resolve,
-			};
+			});
 		});
 
 		if (!canceled) {
@@ -423,31 +321,27 @@
 		const value = Number.parseInt(target.value || '0');
 
 		if (!value || value < 2) {
-			$characterMilestone$ = 0;
+			settings.characterMilestone = 0;
 		} else {
-			$characterMilestone$ = value;
+			settings.characterMilestone = value;
 		}
 
-		if ($characterMilestone$ === 0) {
-			$milestoneLines$ = new Map<string, string>();
-		}
-
-		target.value = `${$characterMilestone$}`;
+		target.value = `${settings.characterMilestone}`;
 		onlayoutChange?.();
 	}
 
 	function handlePreventLastDuplicateBlur(event) {
 		const target = event.target as HTMLInputElement;
 		const value = Number.parseInt(target.value || '0');
-		const wasChange = value !== $preventLastDuplicate$;
+		const wasChange = value !== settings.preventLastDuplicate;
 
 		if (!value || value < 0) {
-			$preventLastDuplicate$ = 0;
+			settings.preventLastDuplicate = 0;
 		} else {
-			$preventLastDuplicate$ = value;
+			settings.preventLastDuplicate = value;
 		}
 
-		target.value = `${$preventLastDuplicate$}`;
+		target.value = `${settings.preventLastDuplicate}`;
 
 		if (wasChange) {
 			handlePreventLastDuplicateChange();
@@ -455,16 +349,16 @@
 	}
 
 	async function handlePreventLastDuplicateChange() {
-		if (!$preventLastDuplicate$ || $lineData$.length < 2) {
+		if (!settings.preventLastDuplicate || dataState.lines.length < 2) {
 			return;
 		}
 
 		const { canceled } = await new Promise<DialogResult>((resolve) => {
-			$openDialog$ = {
+			dialogState.open({
 				icon: mdiHelpCircle,
 				message: 'Apply to current lines',
 				callback: resolve,
-			};
+			});
 		});
 
 		if (canceled) {
@@ -475,8 +369,8 @@
 		const nonDuplicateLineText = new Set<string>();
 		const removedIds = new Set<string>();
 		const removedIndices: number[] = [];
-		const lines = $lineData$.splice(-($preventLastDuplicate$ + 1));
-		const startIndex = $lineData$.length;
+		const startIndex = Math.max(0, dataState.lines.length - settings.preventLastDuplicate - 1);
+		const lines = dataState.lines.slice(startIndex);
 
 		for (let index = 0, { length } = lines; index < length; index += 1) {
 			const line = lines[index];
@@ -490,7 +384,7 @@
 			}
 		}
 
-		$lineData$ = [...$lineData$, ...nonDuplicateLines];
+		dataState.lines = [...dataState.lines.slice(0, startIndex), ...nonDuplicateLines];
 		selectedLineIds = selectedLineIds.filter((selectedLineId) => !removedIds.has(selectedLineId));
 
 		if (removedIds.size > 0) {
@@ -501,15 +395,15 @@
 	function handleMaxLinesBlur(event) {
 		const target = event.target as HTMLInputElement;
 		const value = Number.parseInt(target.value || '0');
-		const wasChange = value !== $maxLines$;
+		const wasChange = value !== settings.maxLines;
 
 		if (!value || value < 0) {
-			$maxLines$ = 0;
+			settings.maxLines = 0;
 		} else {
-			$maxLines$ = value;
+			settings.maxLines = value;
 		}
 
-		target.value = `${$maxLines$}`;
+		target.value = `${settings.maxLines}`;
 
 		if (wasChange) {
 			handleMaxLinesChange();
@@ -521,31 +415,31 @@
 		const value = Number.parseInt(target.value || '0');
 
 		if (!value || value < 0) {
-			$maxPipLines$ = 1;
+			settings.maxPipLines = 1;
 		} else {
-			$maxPipLines$ = value;
+			settings.maxPipLines = value;
 		}
 
-		target.value = `${$maxPipLines$}`;
+		target.value = `${settings.maxPipLines}`;
 	}
 
 	async function handleMaxLinesChange() {
-		const lineDiff = $lineData$.length - $maxLines$;
+		const lineDiff = dataState.lines.length - settings.maxLines;
 
-		if (!$maxLines$ || lineDiff < 1) {
+		if (!settings.maxLines || lineDiff < 1) {
 			return;
 		}
 
 		const { canceled } = await new Promise<DialogResult>((resolve) => {
-			$openDialog$ = {
+			dialogState.open({
 				icon: mdiHelpCircle,
 				message: `This will remove the first ${lineDiff} line(s)`,
 				callback: resolve,
-			};
+			});
 		});
 
 		if (canceled) {
-			$maxLines$ = 0;
+			settings.maxLines = 0;
 		} else {
 			onmaxLinesChange?.();
 			onlayoutChange?.();
@@ -553,16 +447,16 @@
 	}
 
 	async function handlePreventGlobalDuplicateChange() {
-		if (!$preventGlobalDuplicate$ || $lineData$.length < 2) {
+		if (!settings.preventGlobalDuplicate || dataState.lines.length < 2) {
 			return;
 		}
 
 		const { canceled } = await new Promise<DialogResult>((resolve) => {
-			$openDialog$ = {
+			dialogState.open({
 				icon: mdiHelpCircle,
 				message: 'Apply to current lines',
 				callback: resolve,
-			};
+			});
 		});
 
 		if (!canceled) {
@@ -570,7 +464,7 @@
 			const removedLineIds = new Set<string>();
 			const removedIndices: number[] = [];
 
-			$lineData$ = $lineData$.filter((line, index) => {
+			dataState.lines = dataState.lines.filter((line, index) => {
 				if (uniqueLines.has(line.text)) {
 					removedLineIds.add(line.id);
 					removedIndices.push(index);
@@ -589,22 +483,23 @@
 	}
 
 	async function handleRemoveAllWhiteSpaceChange() {
-		if ($removeAllWhitespace$) {
+		if (settings.removeAllWhitespace) {
 			const { canceled } = await new Promise<DialogResult>((resolve) => {
-				$openDialog$ = {
+				dialogState.open({
 					icon: mdiHelpCircle,
 					message: 'Apply to current Lines',
 					callback: resolve,
-				};
+				});
 			});
 
 			if (!canceled) {
 				const changedIds: string[] = [];
 				const changedIndices: number[] = [];
-				$lineData$ = $lineData$.map((oldLine, index) => {
+				dataState.lines = dataState.lines.map((oldLine, index) => {
 					const text = oldLine.text.replace(/\s/g, '').trim();
 					if (text !== oldLine.text) {
 						oldLine.text = text;
+						cacheLineCharacterCount(oldLine);
 						changedIds.push(oldLine.id);
 						changedIndices.push(index);
 					}
@@ -618,18 +513,18 @@
 	}
 
 	function handleCustomCSSBlur(event: FocusEvent) {
-		$customCSS$ = (event.target as HTMLTextAreaElement).value;
+		settings.customCSS = (event.target as HTMLTextAreaElement).value;
 		onlayoutChange?.();
 	}
 
 	async function handleImport(fileInput: HTMLInputElement, message: string) {
-		if (!$skipResetConfirmations$) {
+		if (!settings.skipResetConfirmations) {
 			const { canceled } = await new Promise<DialogResult>((resolve) => {
-				$openDialog$ = {
+				dialogState.open({
 					icon: mdiHelpCircle,
 					message,
 					callback: resolve,
-				};
+				});
 			});
 
 			if (canceled) {
@@ -666,11 +561,11 @@
 			}
 
 			if (!file.name.endsWith('.json')) {
-				$openDialog$ = {
+				dialogState.open({
 					type: 'error',
 					message: `Expected json File`,
 					showCancel: false,
-				};
+				});
 
 				inputElement.value = null;
 				return resolve();
@@ -689,21 +584,22 @@
 			fileReader.readAsText(file, 'utf-8');
 		});
 	}
-	let websocketUrl = $derived($websocketUrl$);
-	let secondaryWebsocketUrl = $derived($secondaryWebsocketUrl$);
 	$effect(() => {
-		document.body.dataset.theme = $theme$;
+		document.body.dataset.theme = settings.theme;
 	});
 	$effect(() => {
-		updateExternalClipboardMonitor($enableExternalClipboardMonitor$);
+		if (!settings.enableExternalClipboardMonitor) return;
+		const observer = new MutationObserver(clipboardMutationObserverCallback);
+		observer.observe(document.body, { childList: true });
+		return () => observer.disconnect();
 	});
 	$effect(() => {
-		applyCustomCSS(document, $customCSS$);
+		applyCustomCSS(document, settings.customCSS);
 	});
 </script>
 
 <svelte:head>
-	<title>{$windowTitle$ || 'Texthooker UI'}</title>
+	<title>{settings.windowTitle || 'Texthooker UI'}</title>
 </svelte:head>
 
 {#if settingsOpen}
@@ -740,7 +636,7 @@
 				<div
 					role="button"
 					class="flex flex-col items-center hover:text-primary"
-					onclick={() => handleReset(true)}
+					onclick={() => onreset(true)}
 					onkeyup={dummyFn}
 				>
 					<Icon path={mdiDelete} />
@@ -750,7 +646,7 @@
 				<div
 					role="button"
 					class="flex flex-col items-center hover:text-primary"
-					onclick={() => handleReset(false)}
+					onclick={() => onreset(false)}
 					onkeyup={dummyFn}
 				>
 					<Icon path={mdiDelete} />
@@ -760,7 +656,7 @@
 				<div
 					role="button"
 					class="flex flex-col items-center hover:text-primary"
-					onclick={resetAllData}
+					onclick={() => resetAllData(onlayoutChange)}
 					onkeyup={dummyFn}
 				>
 					<Icon path={mdiDelete} />
@@ -790,14 +686,14 @@
 				<div
 					role="button"
 					class="flex flex-col items-center hover:text-primary"
-					onclick={() => ($theme$ = $theme$ === Theme.BUSINESS ? Theme.GARDEN : Theme.BUSINESS)}
+					onclick={() => (settings.theme = settings.theme === Theme.BUSINESS ? Theme.GARDEN : Theme.BUSINESS)}
 					onkeyup={dummyFn}
 				>
 					<label class="swap swap-rotate">
 						<input
 							type="checkbox"
-							checked={$theme$ === Theme.BUSINESS}
-							onchange={() => ($theme$ = $theme$ === Theme.BUSINESS ? Theme.GARDEN : Theme.BUSINESS)}
+							checked={settings.theme === Theme.BUSINESS}
+							onchange={() => (settings.theme = settings.theme === Theme.BUSINESS ? Theme.GARDEN : Theme.BUSINESS)}
 						/>
 						<Icon class="swap-on" path={mdiWeatherNight} />
 						<Icon class="swap-off" path={mdiWhiteBalanceSunny} />
@@ -806,24 +702,20 @@
 				</div>
 			</div>
 		</div>
-		<Presets
-			{onlayoutChange}
-			onexportImportPreset={(detail) => handleExportImportPreset(detail)}
-			bind:this={presetComponent}
-		/>
+		<Presets {onlayoutChange} onexportImportPreset={(detail) => handleExportImportPreset(detail)} />
 		<ReplacementSettings {onapplyReplacements} />
 		<span class="label-text col-span-2">Window Title</span>
-		<input class="input input-bordered h-8 col-span-2" bind:value={$windowTitle$} />
+		<input class="input input-bordered h-8 col-span-2" bind:value={settings.windowTitle} />
 		<span class="label-text col-span-2">Primary Websocket</span>
 		<input
 			class="input input-bordered h-8 col-span-2"
-			bind:value={websocketUrl}
-			onchange={() => ($websocketUrl$ = websocketUrl)}
+			value={settings.websocketUrl}
+			onchange={(event) => (settings.websocketUrl = event.currentTarget.value)}
 		/>
 		<span class="label-text col-span-2">Secondary Websocket</span>
 		<input
 			class="input input-bordered h-8 col-span-2"
-			bind:value={secondaryWebsocketUrl}
+			value={settings.secondaryWebsocketUrl}
 			onchange={handleSecondaryWebsocketChange}
 		/>
 		<span class="label-text col-span-2">Font Size</span>
@@ -831,10 +723,11 @@
 			type="number"
 			class="input input-bordered h-8 col-span-2"
 			min="1"
-			bind:value={$fontSize$}
+			bind:value={settings.fontSize}
+			oninput={() => onlayoutChange?.()}
 			onblur={() => {
-				if (!$fontSize$ || $fontSize$ < 1) {
-					$fontSize$ = 24;
+				if (!settings.fontSize || settings.fontSize < 1) {
+					settings.fontSize = 24;
 				}
 				onlayoutChange?.();
 			}}
@@ -844,10 +737,11 @@
 			type="number"
 			class="input input-bordered h-8 col-span-2"
 			min="0"
-			bind:value={$linePadding$}
+			bind:value={settings.linePadding}
+			oninput={() => onlayoutChange?.()}
 			onblur={() => {
-				if ($linePadding$ === null || $linePadding$ < 0) {
-					$linePadding$ = 1;
+				if (settings.linePadding === null || settings.linePadding < 0) {
+					settings.linePadding = 1;
 				}
 				onlayoutChange?.();
 			}}
@@ -857,11 +751,11 @@
 			type="number"
 			class="input input-bordered h-8 col-span-2"
 			min="0"
-			value={$characterMilestone$}
+			value={settings.characterMilestone}
 			onblur={handleCharacterMilestoneBlur}
 		/>
 		<span class="label-text mr-4 col-span-2">Online Font</span>
-		<select class="select col-span-2" bind:value={$onlineFont$} onchange={() => onlayoutChange?.()}>
+		<select class="select col-span-2" bind:value={settings.onlineFont} onchange={() => onlayoutChange?.()}>
 			{#each onlineFonts as font (font)}
 				<option value={font}>
 					{font}
@@ -873,7 +767,7 @@
 			type="number"
 			class="input input-bordered h-8 col-span-2"
 			min="0"
-			value={$preventLastDuplicate$}
+			value={settings.preventLastDuplicate}
 			onblur={handlePreventLastDuplicateBlur}
 		/>
 		<span class="label-text col-span-2">Max lines</span>
@@ -881,7 +775,7 @@
 			type="number"
 			class="input input-bordered h-8 mb-2 col-span-2"
 			min="0"
-			value={$maxLines$}
+			value={settings.maxLines}
 			onblur={handleMaxLinesBlur}
 		/>
 		{#if pipAvailable}
@@ -890,7 +784,7 @@
 				type="number"
 				class="input input-bordered h-8 mb-2 col-span-2"
 				min="0"
-				value={$maxPipLines$}
+				value={settings.maxPipLines}
 				onblur={handleMaxPipLinesBlur}
 			/>
 		{/if}
@@ -899,152 +793,152 @@
 			type="number"
 			class="input input-bordered h-8 mb-2 col-span-2"
 			min="0"
-			bind:value={$afkTimer$}
+			bind:value={settings.afkTimer}
 			onblur={() => {
-				if ($afkTimer$ === null || $afkTimer$ < 0) {
-					$afkTimer$ = 0;
+				if (settings.afkTimer === null || settings.afkTimer < 0) {
+					settings.afkTimer = 0;
 				}
 			}}
 		/>
 		<span class="label-text">Adjust Timer after AFK</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$adjustTimerOnAfk$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.adjustTimerOnAfk} />
 		<span class="label-text">Enable external Clipboard Monitor</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$enableExternalClipboardMonitor$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.enableExternalClipboardMonitor} />
 		<span class="label-text">Show Preset Quick Switch</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$showPresetQuickSwitch$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.showPresetQuickSwitch} />
 		<span class="label-text">Skip Reset Confirmations</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$skipResetConfirmations$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.skipResetConfirmations} />
 		<span class="label-text">Store Stats persistently</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
-			bind:checked={$persistStats$}
+			bind:checked={settings.persistStats}
 			onchange={() =>
-				handlePersistenceChange($persistStats$, 'Clear stored stats', 'bannou-texthooker-timeValue')}
+				handlePersistenceChange(settings.persistStats, 'Clear stored stats', 'bannou-texthooker-timeValue')}
 		/>
 		<span class="label-text">Store Notes persistently</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
-			bind:checked={$persistNotes$}
+			bind:checked={settings.persistNotes}
 			onchange={() =>
-				handlePersistenceChange($persistNotes$, 'Clear stored notes', 'bannou-texthooker-userNotes')}
+				handlePersistenceChange(settings.persistNotes, 'Clear stored notes', 'bannou-texthooker-userNotes')}
 		/>
 		<span class="label-text">Store Lines persistently</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
-			bind:checked={$persistLines$}
-			onchange={() => handlePersistenceChange($persistLines$, 'Clear stored lines', 'bannou-texthooker-lineData')}
+			bind:checked={settings.persistLines}
+			onchange={() => handlePersistenceChange(settings.persistLines, 'Clear stored lines', 'bannou-texthooker-lineData')}
 		/>
 		<span class="label-text">Store Action History persistently</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
-			bind:checked={$persistActionHistory$}
+			bind:checked={settings.persistActionHistory}
 			onchange={() =>
 				handlePersistenceChange(
-					$persistActionHistory$,
+					settings.persistActionHistory,
 					'Clear action history',
 					'bannou-texthooker-actionHistory',
 				)}
 		/>
 		<span class="label-text">Enable Paste</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$enablePaste$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.enablePaste} />
 		<span class="label-text">Block Copy from Page</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$blockCopyOnPage$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.blockCopyOnPage} />
 		<span class="label-text">Allow Paste during Pause</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$allowPasteDuringPause$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.allowPasteDuringPause} />
 		<span class="label-text">Allow new Line during Pause</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$allowNewLineDuringPause$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.allowNewLineDuringPause} />
 		<span class="label-text">Autostart Timer by Paste during Pause</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$autoStartTimerDuringPausePaste$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.autoStartTimerDuringPausePaste} />
 		<span class="label-text">Autostart Timer by Line during Pause</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$autoStartTimerDuringPause$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.autoStartTimerDuringPause} />
 		<span class="label-text">Prevent Global Duplicate</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
-			bind:checked={$preventGlobalDuplicate$}
+			bind:checked={settings.preventGlobalDuplicate}
 			onchange={handlePreventGlobalDuplicateChange}
 		/>
 		<span class="label-text">Merge equal Line Starts</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$mergeEqualLineStarts$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.mergeEqualLineStarts} />
 		<span class="label-text">Filter lines without jp content</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$filterNonCJKLines$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.filterNonCJKLines} />
 		<span class="label-text">Flash on missed Line</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$flashOnMissedLine$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.flashOnMissedLine} />
 		<span class="label-text">Display Text vertically</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
-			bind:checked={$displayVertical$}
+			bind:checked={settings.displayVertical}
 			onchange={() => onlayoutChange?.()}
 		/>
 		<span class="label-text">Reverse Line Order</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
-			bind:checked={$reverseLineOrder$}
+			bind:checked={settings.reverseLineOrder}
 			onchange={() => onlayoutChange?.()}
 		/>
 		<span class="label-text">Preserve Whitespace</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
-			bind:checked={$preserveWhitespace$}
+			bind:checked={settings.preserveWhitespace}
 			onchange={() => onlayoutChange?.()}
 		/>
 		<span class="label-text">Remove all Whitespace</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
-			bind:checked={$removeAllWhitespace$}
+			bind:checked={settings.removeAllWhitespace}
 			onchange={handleRemoveAllWhiteSpaceChange}
 		/>
 		<span class="label-text">Show Bullet Points</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
-			bind:checked={$showLinePoints$}
+			bind:checked={settings.showLinePoints}
 			onchange={() => onlayoutChange?.()}
 		/>
 		<span class="label-text">Show Timer</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$showTimer$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.showTimer} />
 		<span class="label-text">Show Speed</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$showSpeed$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.showSpeed} />
 		<span class="label-text">Show Character Count</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$showCharacterCount$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.showCharacterCount} />
 		<span class="label-text">Show Line Count</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$showLineCount$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.showLineCount} />
 		<span class="label-text">Blur Stats</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$blurStats$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.blurStats} />
 		<span class="label-text">Enable Line Animation</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$enableLineAnimation$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.enableLineAnimation} />
 		<span class="label-text">Enable AFK Blur</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$enableAfkBlur$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.enableAfkBlur} />
 		<span class="label-text">Restart Timer after AFK Blur</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$enableAfkBlurRestart$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.enableAfkBlurRestart} />
 		<span class="label-text">Continuous Reconnect</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
-			bind:checked={$continuousReconnect$}
+			bind:checked={settings.continuousReconnect}
 			onchange={() => {
-				reconnectSocket$.next();
-				reconnectSecondarySocket$.next();
+				reconnectPrimarySocket.emit();
+				reconnectSecondarySocket.emit();
 			}}
 		/>
 		<span class="label-text">Show Connection Errors</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$showConnectionErrors$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.showConnectionErrors} />
 		<span class="label-text">Show Connection Icon</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={$showConnectionIcon$} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.showConnectionIcon} />
 		<span class="label-text" style="grid-column: 1/5;">Custom CSS</span>
 		<textarea
 			class="p-1 min-h-[10rem] font-mono"
 			style="grid-column: 1/5;"
 			rows="5"
-			value={$customCSS$}
+			value={settings.customCSS}
 			onblur={handleCustomCSSBlur}
 		></textarea>
 	</div>

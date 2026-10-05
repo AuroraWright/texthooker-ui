@@ -1,4 +1,12 @@
 <script lang="ts">
+	import { dataState } from '../stores/data-state.svelte';
+	import { dialogState } from '../stores/dialog-state.svelte';
+	import { appState } from '../stores/app-state.svelte';
+	import { setPaused } from '../stores/state-actions';
+
+	import { settings } from '../stores/settings.svelte';
+	import { lineStatistics } from '../stores/line-statistics.svelte';
+
 	import { untrack } from 'svelte';
 
 	import {
@@ -7,70 +15,26 @@
 		mdiCog,
 		mdiDelete,
 		mdiDeleteForever,
+		mdiHelpCircle,
 		mdiNoteEdit,
 		mdiPause,
 		mdiPlay,
 		mdiWindowMaximize,
 		mdiWindowRestore,
 	} from '@mdi/js';
-	import { debounceTime, filter, fromEvent, map, NEVER, switchMap, tap } from 'rxjs';
 	import { onMount, tick } from 'svelte';
 	import { quintInOut } from 'svelte/easing';
 	import { fly } from 'svelte/transition';
-	import {
-		actionHistory$,
-		allowNewLineDuringPause$,
-		allowPasteDuringPause$,
-		autoStartTimerDuringPause$,
-		autoStartTimerDuringPausePaste$,
-		blockCopyOnPage$,
-		characterMilestone$,
-		customCSS$,
-		dialogOpen$,
-		displayVertical$,
-		enabledReplacements$,
-		enableLineAnimation$,
-		enablePaste$,
-		filterNonCJKLines$,
-		flashOnMissedLine$,
-		flashOnPauseTimeout$,
-		fontSize$,
-		isPaused$,
-		lastPipHeight$,
-		lastPipWidth$,
-		lineData$,
-		linePadding$,
-		maxLines$,
-		maxPipLines$,
-		mergeEqualLineStarts$,
-		milestoneLines$,
-		newLine$,
-		notesOpen$,
-		onlineFont$,
-		openDialog$,
-		preventGlobalDuplicate$,
-		preventLastDuplicate$,
-		preserveWhitespace$,
-		removeAllWhitespace$,
-		replacements$,
-		reverseLineOrder$,
-		secondaryWebsocketUrl$,
-		showConnectionIcon$,
-		showLinePoints$,
-		showSpinner$,
-		theme$,
-		websocketUrl$,
-		newLines,
-		pipNewLines,
-	} from '../stores/stores';
-	import { LineType, OnlineFont, Theme, type LineItem, type LineItemEditEvent } from '../types';
+	import { removeIDBItem } from '../idb';
+	import { newLines, pipNewLines } from '../stores/stores';
+	import { incomingLine } from '../events';
+	import { cacheLineCharacterCount } from '../stores/line-character-counts';
+	import { LineType, OnlineFont, Theme, type DialogResult, type LineItem, type LineItemEditEvent } from '../types';
 	import {
 		applyAfkBlur,
 		applyCustomCSS,
 		applyReplacements,
-		clearReplacementCaches,
 		generateRandomUUID,
-		reduceToEmptyString,
 		updateScroll,
 	} from '../util';
 	import DialogManager from './DialogManager.svelte';
@@ -83,20 +47,21 @@
 	import Spinner from './Spinner.svelte';
 	import Stats from './Stats.svelte';
 	import VirtualList from './VirtualList.svelte';
+	import { VirtualListController } from '../virtual-list-controller';
 
 	let isSmFactor = $state(false);
-	let settingsComponent: ReturnType<typeof Settings> = $state();
 	let selectedLineIds: string[] = $state([]);
 	let settingsContainer: HTMLElement = $state();
 	let settingsElement: SVGElement = $state();
 	let settingsOpen = $state(false);
 	let lineInEdit = false;
 	let blockNextExternalLine = false;
+	let resizeTimeout: number;
 	let wakeLock = null;
 	let pipContainer: HTMLElement = $state();
 	let pipWindow: Window | undefined = $state();
 	let pipResizeTimeout: number;
-	let virtualListComponent: ReturnType<typeof VirtualList> = $state();
+	const virtualListController = new VirtualListController();
 	let lineSizes = new Map<string, number>();
 	let listWidth = $state(0);
 	let listHeight = $state(0);
@@ -110,133 +75,133 @@
 	let showSearch = $state(false);
 	let searchInputElement: HTMLInputElement = $state();
 	let searchQuery = $state('');
-	let prevLowerQuery = '';
-	let currentMatchStep = $state(0);
+	let requestedMatchStep = $state(0);
 
 	const wakeLockAvailable = 'wakeLock' in navigator;
 	const cjkCharacters = /[\p{scx=Hira}\p{scx=Kana}\p{scx=Han}]/imu;
 
-	const uniqueLines$ = preventGlobalDuplicate$.pipe(
-		map((preventGlobalDuplicate) =>
-			preventGlobalDuplicate ? new Set<string>($lineData$.map((line) => line.text)) : new Set<string>(),
-		),
-	);
+	const lineTextCounts = $derived.by(() => {
+		const counts = new Map<string, number>();
+		if (settings.preventGlobalDuplicate) {
+			for (const line of dataState.lines) changeTextCount(counts, line.text, 1);
+		}
+		return counts;
+	});
 
-	const handleLine$ = newLine$.pipe(
-		filter(([_, lineType]) => {
+	function changeTextCount(counts: Map<string, number>, text: string, delta: number) {
+		const count = (counts.get(text) ?? 0) + delta;
+		if (count > 0) counts.set(text, count);
+		else counts.delete(text);
+	}
+
+	function canReceiveLine(lineType: LineType) {
+		const isPaste = lineType === LineType.PASTE;
+		const hasNoUserInteraction = !settings.notesOpen && !appState.dialogOpen && !settingsOpen && !lineInEdit;
+		const skipExternalLine = blockNextExternalLine && lineType === LineType.EXTERNAL;
+
+		if (skipExternalLine) {
+			blockNextExternalLine = false;
+		}
+
+		if (
+			(!appState.isPaused ||
+				((settings.allowPasteDuringPause || settings.autoStartTimerDuringPausePaste) && isPaste) ||
+				((settings.allowNewLineDuringPause || settings.autoStartTimerDuringPause) && !isPaste)) &&
+			hasNoUserInteraction &&
+			!skipExternalLine
+		) {
+			return true;
+		}
+
+		if (!skipExternalLine && hasNoUserInteraction && settings.flashOnMissedLine) {
+			handleMissedLine();
+		}
+
+		return false;
+	}
+
+	function handleIncomingLine([lineContent, lineType]: [string, LineType]) {
+		if (!canReceiveLine(lineType)) return;
+		const text = transformLine(lineContent);
+
+		if (text) {
 			const isPaste = lineType === LineType.PASTE;
-			const hasNoUserInteraction = !$notesOpen$ && !$dialogOpen$ && !settingsOpen && !lineInEdit;
-			const skipExternalLine = blockNextExternalLine && lineType === LineType.EXTERNAL;
+			const currentLines = applyMaxLinesAndGetRemainingLineData(1);
+			const newId = generateRandomUUID();
+			const item = cacheLineCharacterCount({ id: newId, text });
 
-			if (skipExternalLine) {
-				blockNextExternalLine = false;
+			if (initialScrollDone && !appState.showSpinner && !showSearch) {
+				newLines.add(item);
 			}
+			if (pipWindow) {
+				pipNewLines.add(item);
+			}
+			currentLines.push(item);
+			if (settings.reverseLineOrder) {
+				virtualListController.shiftIndices(1);
+			}
+			dataState.lines = applyEqualLineStartMerge(currentLines);
+			tick().then(() => executeUpdateScroll());
 
 			if (
-				(!$isPaused$ ||
-					(($allowPasteDuringPause$ || $autoStartTimerDuringPausePaste$) && isPaste) ||
-					(($allowNewLineDuringPause$ || $autoStartTimerDuringPause$) && !isPaste)) &&
-				hasNoUserInteraction &&
-				!skipExternalLine
+				appState.isPaused &&
+				((settings.autoStartTimerDuringPausePaste && isPaste) || (settings.autoStartTimerDuringPause && !isPaste))
 			) {
-				return true;
+				setPaused(false);
 			}
+		}
+	}
 
-			if (!skipExternalLine && hasNoUserInteraction && $flashOnMissedLine$) {
-				handleMissedLine();
-			}
+	function handlePaste(event: ClipboardEvent) {
+		if (!settings.enablePaste) return;
+		const target = event.target as HTMLElement;
+		if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+		incomingLine.emit([event.clipboardData.getData('text/plain'), LineType.PASTE]);
+	}
 
-			return false;
-		}),
-		tap((newLine: [string, LineType]) => {
-			const [lineContent, lineType] = newLine;
-			const text = transformLine(lineContent);
+	function handleVisibilityChange() {
+		if (wakeLockAvailable && wakeLock !== null && document.visibilityState === 'visible') {
+			wakeLock = navigator.wakeLock
+				.request('screen')
+				.then((lock) => lock)
+				.catch((error) => {
+					console.error(`Unable to aquire screen lock: ${error.message}`);
+					return null;
+				});
+		}
+	}
 
-			if (text) {
-				const isPaste = lineType === LineType.PASTE;
-				const currentLines = applyMaxLinesAndGetRemainingLineData(1);
-				const newId = generateRandomUUID();
-				const item: LineItem = { id: newId, text };
+	function handleCopy() {
+		blockNextExternalLine = true;
+	}
 
-				if (initialScrollDone && !$showSpinner$ && !showSearch) {
-					newLines.add(item);
-				}
-				if (pipWindow) {
-					pipNewLines.add(item);
-				}
-				currentLines.push(item);
-				if ($reverseLineOrder$) {
-					virtualListComponent?.shiftIndices(1);
-				}
-				$lineData$ = applyEqualLineStartMerge(currentLines);
-				tick().then(() => executeUpdateScroll());
-
-				if (
-					$isPaused$ &&
-					(($autoStartTimerDuringPausePaste$ && isPaste) || ($autoStartTimerDuringPause$ && !isPaste))
-				) {
-					$isPaused$ = false;
-				}
-			}
-		}),
-		reduceToEmptyString(),
-	);
-
-	const pasteHandler$ = enablePaste$.pipe(
-		switchMap((enablePaste) => (enablePaste ? fromEvent(document, 'paste') : NEVER)),
-		filter((event) => {
-			const target = event.target as HTMLElement;
-			return target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA' && !target.isContentEditable;
-		}),
-		tap((event: ClipboardEvent) => newLine$.next([event.clipboardData.getData('text/plain'), LineType.PASTE])),
-		reduceToEmptyString(),
-	);
-
-	const visibilityHandler$ = fromEvent(document, 'visibilitychange').pipe(
-		tap(() => {
-			if (wakeLockAvailable && wakeLock !== null && document.visibilityState === 'visible') {
-				wakeLock = navigator.wakeLock
-					.request('screen')
-					.then((lock) => {
-						return lock;
-					})
-					.catch((error) => {
-						console.error(`Unable to aquire screen lock: ${error.message}`);
-						return null;
-					});
-			}
-		}),
-		reduceToEmptyString(),
-	);
-
-	const copyBlocker$ = blockCopyOnPage$.pipe(
-		switchMap((blockCopyOnPage) => {
+	$effect(() => {
+		if (!settings.blockCopyOnPage) return;
+		document.addEventListener('copy', handleCopy);
+		return () => {
+			document.removeEventListener('copy', handleCopy);
 			blockNextExternalLine = false;
+		};
+	});
 
-			return blockCopyOnPage ? fromEvent(document, 'copy') : NEVER;
-		}),
-		tap(() => (blockNextExternalLine = true)),
-		reduceToEmptyString(),
-	);
-
-	const resizeHandler$ = fromEvent(window, 'resize').pipe(
-		debounceTime(500),
-		tap(() => {
+	function handleResize() {
+		window.clearTimeout(resizeTimeout);
+		resizeTimeout = window.setTimeout(() => {
 			isSmFactor = window.matchMedia('(min-width: 640px)').matches;
 			executeUpdateScroll(true);
-		}),
-		reduceToEmptyString(),
-	);
+		}, 500);
+	}
 
 	const virtualItemSize = (index: number) => {
 		const actualIndex = mapIndex(index);
-		const line = $lineData$[actualIndex];
+		const line = dataState.lines[actualIndex];
 		return line ? lineSizes.get(line.id) : undefined;
 	};
 
 	const mountedNodes = new Map<string, { node: HTMLElement; getVirtual: () => number }>();
 
 	onMount(() => {
+		const unsubscribe = incomingLine.subscribe(handleIncomingLine);
 		isSmFactor = window.matchMedia('(min-width: 640px)').matches;
 		if (wakeLockAvailable) {
 			wakeLock = navigator.wakeLock
@@ -249,28 +214,40 @@
 					return null;
 				});
 		}
+		return () => {
+			unsubscribe();
+			window.clearTimeout(resizeTimeout);
+		};
 	});
 
-	function mapIndex(index: number, lineCount = $lineData$.length): number {
-		return $reverseLineOrder$ ? lineCount - 1 - index : index;
+	function mapIndex(index: number, lineCount = dataState.lines.length): number {
+		return settings.reverseLineOrder ? lineCount - 1 - index : index;
 	}
 
 	function nextMatch() {
 		if (matchIndices.length === 0) return;
-		currentMatchStep = (currentMatchStep + 1) % matchIndices.length;
+		requestedMatchStep = (currentMatchStep + 1) % matchIndices.length;
 		const targetIndex = matchIndices[currentMatchStep];
 
 		const virtualTarget = mapIndex(targetIndex);
-		virtualListComponent?.scrollListToIndex(virtualTarget, 'auto', 'center');
+		virtualListController.scrollListToIndex(virtualTarget, 'auto', 'center');
 	}
 
 	function prevMatch() {
 		if (matchIndices.length === 0) return;
-		currentMatchStep = (currentMatchStep - 1 + matchIndices.length) % matchIndices.length;
+		requestedMatchStep = (currentMatchStep - 1 + matchIndices.length) % matchIndices.length;
 		const targetIndex = matchIndices[currentMatchStep];
 
 		const virtualTarget = mapIndex(targetIndex);
-		virtualListComponent?.scrollListToIndex(virtualTarget, 'auto', 'center');
+		virtualListController.scrollListToIndex(virtualTarget, 'auto', 'center');
+	}
+
+	function handleSearchInput(event: Event) {
+		const query = (event.target as HTMLInputElement).value;
+		if (query.trim().toLowerCase() !== lowerQuery) {
+			requestedMatchStep = 0;
+		}
+		searchQuery = query;
 	}
 
 	function measureSize(node: HTMLElement, params: { line: LineItem; virtual: number }) {
@@ -278,34 +255,38 @@
 		let lineId = line.id;
 		mountedNodes.set(lineId, { node, getVirtual: () => virtual });
 
-		const ro = new ResizeObserver(() => {
-			const size = $displayVertical$ ? node.offsetWidth : node.offsetHeight;
+		function measure(invalidate = false) {
+			if (mountedNodes.get(lineId)?.node !== node) return;
+			const size = settings.displayVertical ? node.offsetWidth : node.offsetHeight;
 			const currentSize = lineSizes.get(lineId);
 
-			if (!currentSize || Math.abs(currentSize - size) > 1) {
+			if (invalidate || !currentSize || Math.abs(currentSize - size) > 1) {
 				lineSizes.set(lineId, size);
 				pendingInvalidations.add(virtual);
 				if (!recomputePending) {
 					recomputePending = true;
 					tick().then(() => {
 						if (pendingInvalidations.size > 0) {
-							virtualListComponent?.invalidateIndices(Array.from(pendingInvalidations));
+							virtualListController.invalidateIndices(Array.from(pendingInvalidations));
 						}
 						pendingInvalidations.clear();
 						recomputePending = false;
 					});
 				}
 			}
-		});
+		}
+
+		const ro = new ResizeObserver(() => measure());
 
 		ro.observe(node);
 
 		return {
 			update(newParams: { line: LineItem; virtual: number }) {
 				const newLineId = newParams.line.id;
+				const rowChanged = lineId !== newLineId || virtual !== newParams.virtual;
 
 				if (lineId !== newLineId) {
-					mountedNodes.delete(lineId);
+					if (mountedNodes.get(lineId)?.node === node) mountedNodes.delete(lineId);
 
 					line = newParams.line;
 					lineId = newLineId;
@@ -316,9 +297,10 @@
 				}
 
 				virtual = newParams.virtual;
+				if (rowChanged) tick().then(() => measure(true));
 			},
 			destroy() {
-				mountedNodes.delete(lineId);
+				if (mountedNodes.get(lineId)?.node === node) mountedNodes.delete(lineId);
 				ro.disconnect();
 			},
 		};
@@ -328,7 +310,7 @@
 		const invalidIndices: number[] = [];
 
 		for (const [id, { node, getVirtual }] of mountedNodes) {
-			const size = $displayVertical$ ? node.offsetWidth : node.offsetHeight;
+			const size = settings.displayVertical ? node.offsetWidth : node.offsetHeight;
 			if (size > 0) {
 				lineSizes.set(id, size);
 				invalidIndices.push(getVirtual());
@@ -336,15 +318,15 @@
 		}
 
 		if (invalidIndices.length > 0) {
-			virtualListComponent?.invalidateIndices(invalidIndices);
+			virtualListController.invalidateIndices(invalidIndices);
 		}
 	}
 
 	function handleKeyUp(event: KeyboardEvent) {
 		const target = event.target as HTMLElement;
 		if (
-			$notesOpen$ ||
-			$dialogOpen$ ||
+			settings.notesOpen ||
+			appState.dialogOpen ||
 			settingsOpen ||
 			lineInEdit ||
 			showSearch ||
@@ -370,11 +352,11 @@
 				if (startLine && endLine) {
 					const startId = startLine.dataset.lineId;
 					const endId = endLine.dataset.lineId;
-					const startIndex = $lineData$.findIndex((l) => l.id === startId);
-					const endIndex = $lineData$.findIndex((l) => l.id === endId);
+					const startIndex = dataState.lines.findIndex((l) => l.id === startId);
+					const endIndex = dataState.lines.findIndex((l) => l.id === endId);
 					if (startIndex !== -1 && endIndex !== -1) {
 						const [from, to] = [Math.min(startIndex, endIndex), Math.max(startIndex, endIndex)];
-						const idsInRange = $lineData$.slice(from, to + 1).map((l) => l.id);
+						const idsInRange = dataState.lines.slice(from, to + 1).map((l) => l.id);
 						selectedLineIds = Array.from(new Set([...selectedLineIds, ...idsInRange]));
 					}
 				}
@@ -388,14 +370,65 @@
 		} else if (selectedLineIds.length && key === 'escape') {
 			deselectLines();
 		} else if (event.altKey && key === 'a') {
-			settingsComponent.handleReset(false);
+			handleReset(false);
 		} else if (event.altKey && key === 'q') {
-			settingsComponent.handleReset(true);
+			handleReset(true);
 		} else if ((event.ctrlKey || event.metaKey) && key === ' ') {
-			$isPaused$ = !$isPaused$;
+			setPaused(!appState.isPaused);
 		} else if (event.altKey && key === 'g') {
-			$showConnectionIcon$ = !$showConnectionIcon$;
+			settings.showConnectionIcon = !settings.showConnectionIcon;
 		}
+	}
+
+	async function handleReset(linesOnly: boolean) {
+		if (!settings.skipResetConfirmations) {
+			const { canceled } = await new Promise<DialogResult>((resolve) => {
+				dialogState.open({
+					icon: mdiHelpCircle,
+					message: linesOnly
+						? 'All displayed and stored Lines will be cleared'
+						: 'Clear stored Lines + set Timer to 00:00:00',
+					callback: resolve,
+				});
+			});
+
+			if (canceled) {
+				return;
+			}
+		}
+
+		dataState.lines = [];
+		selectedLineIds = [];
+		window.localStorage.removeItem('bannou-texthooker-lineData');
+		await removeIDBItem('bannou-texthooker-lineData');
+
+		if (!linesOnly) {
+			settings.timeValue = 0;
+			dataState.userNotes = '';
+			dataState.actionHistory = [];
+			await tick();
+			window.localStorage.removeItem('bannou-texthooker-timeValue');
+			window.localStorage.removeItem('bannou-texthooker-userNotes');
+			await removeIDBItem('bannou-texthooker-userNotes');
+			window.localStorage.removeItem('bannou-texthooker-actionHistory');
+			await removeIDBItem('bannou-texthooker-actionHistory');
+		}
+
+		handleDataResetOrImported();
+	}
+
+	function handleDataResetOrImported() {
+		deselectLines();
+		handleLayoutInvalidation();
+	}
+
+	function handleLayoutInvalidation() {
+		lineSizes.clear();
+		virtualListController.clearCache();
+		tick().then(() => {
+			remeasureMountedLines();
+			executeUpdateScroll(true);
+		});
 	}
 
 	function handleKeyDown(event: KeyboardEvent) {
@@ -411,32 +444,39 @@
 	}
 
 	async function undoLastAction() {
-		if (!$actionHistory$.length) {
+		if (!dataState.actionHistory.length) {
 			return;
 		}
 
-		const linesToRevert = $actionHistory$.pop();
+		const history = dataState.actionHistory.slice(0, -1);
+		const linesToRevert = [...dataState.actionHistory[dataState.actionHistory.length - 1]];
+		const currentLines = [...dataState.lines];
+		const workingTexts = new Map(lineTextCounts);
 		let lineToRevert = linesToRevert.pop();
 		const restoredIds = new Set<string>();
 		const editedIds = new Set<string>();
 
 		while (lineToRevert) {
-			const text = transformLine(lineToRevert.text, false);
+			const previousLine = currentLines[lineToRevert.index];
+			const excludedText = previousLine?.id === lineToRevert.id ? previousLine.text : undefined;
+			const text = transformLine(lineToRevert.text, false, workingTexts, excludedText);
 
 			if (text) {
+				if (excludedText !== undefined) changeTextCount(workingTexts, excludedText, -1);
+				changeTextCount(workingTexts, text, 1);
 				const { id, index } = lineToRevert;
 
-				if (index > $lineData$.length - 1) {
-					$lineData$.push({ id, text });
+				if (index > currentLines.length - 1) {
+					currentLines.push(cacheLineCharacterCount({ id, text }));
 					restoredIds.add(id);
-				} else if ($lineData$[index].id === id) {
-					if ($lineData$[index].text !== text) {
+				} else if (currentLines[index].id === id) {
+					if (currentLines[index].text !== text) {
 						lineSizes.delete(id);
 						editedIds.add(id);
 					}
-					$lineData$[index] = { id, text };
+					currentLines[index] = cacheLineCharacterCount({ id, text });
 				} else {
-					$lineData$.splice(index, 0, { id, text });
+					currentLines.splice(index, 0, cacheLineCharacterCount({ id, text }));
 					restoredIds.add(id);
 				}
 			}
@@ -444,52 +484,54 @@
 			lineToRevert = linesToRevert.pop();
 		}
 
+		dataState.lines = currentLines;
+
 		if (restoredIds.size > 0) {
 			const addedActualIndices: number[] = [];
-			for (let i = 0; i < $lineData$.length; i++) {
-				if (restoredIds.has($lineData$[i].id)) {
+			for (let i = 0; i < dataState.lines.length; i++) {
+				if (restoredIds.has(dataState.lines[i].id)) {
 					addedActualIndices.push(i);
 				}
 			}
 			const virtualAddedIndices = addedActualIndices.map((index) => mapIndex(index));
-			virtualListComponent?.insertIndices(virtualAddedIndices);
+			virtualListController.insertIndices(virtualAddedIndices);
 		}
 
 		if (editedIds.size > 0) {
 			const virtualEditedIndices: number[] = [];
-			for (let index = 0; index < $lineData$.length; index++) {
-				if (editedIds.has($lineData$[index].id)) {
+			for (let index = 0; index < dataState.lines.length; index++) {
+				if (editedIds.has(dataState.lines[index].id)) {
 					virtualEditedIndices.push(mapIndex(index));
 				}
 			}
-			virtualListComponent?.invalidateIndices(virtualEditedIndices);
+			virtualListController.invalidateIndices(virtualEditedIndices);
 		}
 
 		await tick();
-		$lineData$ = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData());
-		$actionHistory$ = $actionHistory$;
+		dataState.lines = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData());
+		dataState.actionHistory = history;
 
 		remeasureMountedLines();
 	}
 
 	function removeLastLine() {
-		if (!$lineData$.length) {
+		if (!dataState.lines.length) {
 			return;
 		}
 
-		const removedActualIndex = $lineData$.length - 1;
+		const removedActualIndex = dataState.lines.length - 1;
 		const virtualIndexToRemove = mapIndex(removedActualIndex);
 
-		const [removedLine] = $lineData$.splice(removedActualIndex, 1);
+		const removedLine = dataState.lines[removedActualIndex];
 		selectedLineIds = selectedLineIds.filter((selectedLineId) => selectedLineId !== removedLine.id);
 
-		virtualListComponent?.removeIndices([virtualIndexToRemove]);
+		virtualListController.removeIndices([virtualIndexToRemove]);
 
-		$lineData$ = $lineData$;
-		$actionHistory$ = [...$actionHistory$, [{ ...removedLine, index: $lineData$.length }]];
+		dataState.lines = dataState.lines.slice(0, removedActualIndex);
+		dataState.actionHistory = [...dataState.actionHistory, [{ ...removedLine, index: dataState.lines.length }]];
 
 		lineSizes.delete(removedLine.id);
-		$uniqueLines$.delete(removedLine.text);
+
 	}
 
 	function removeLines() {
@@ -497,7 +539,7 @@
 		const newActionHistory: LineItem[] = [];
 		const virtualIndicesToRemove: number[] = [];
 
-		$lineData$ = $lineData$.filter((oldLine, index) => {
+		dataState.lines = dataState.lines.filter((oldLine, index) => {
 			const hasLine = linesToDelete.has(oldLine.id);
 
 			linesToDelete.delete(oldLine.id);
@@ -505,7 +547,7 @@
 			if (hasLine) {
 				lineSizes.delete(oldLine.id);
 				newActionHistory.push({ ...oldLine, index: index - newActionHistory.length });
-				$uniqueLines$.delete(oldLine.text);
+
 				virtualIndicesToRemove.push(mapIndex(index));
 				return false;
 			}
@@ -516,10 +558,10 @@
 		selectedLineIds = linesToDelete.size ? [...linesToDelete] : [];
 
 		if (newActionHistory.length) {
-			$actionHistory$ = [...$actionHistory$, newActionHistory];
+			dataState.actionHistory = [...dataState.actionHistory, newActionHistory];
 		}
 
-		virtualListComponent?.removeIndices(virtualIndicesToRemove);
+		virtualListController.removeIndices(virtualIndicesToRemove);
 	}
 
 	function deselectLines() {
@@ -533,15 +575,15 @@
 
 		pipWindow = await window.documentPictureInPicture
 			.requestWindow(
-				$lastPipHeight$ > 0 && $lastPipWidth$ > 0
-					? { height: $lastPipHeight$, width: $lastPipWidth$, preferInitialWindowPlacement: false }
+				settings.lastPipHeight > 0 && settings.lastPipWidth > 0
+					? { height: settings.lastPipHeight, width: settings.lastPipWidth, preferInitialWindowPlacement: false }
 					: { preferInitialWindowPlacement: false },
 			)
 			.catch(({ message }) => {
-				$openDialog$ = {
+				dialogState.open({
 					message: `Error opening floating window: ${message}`,
 					showCancel: false,
-				};
+				});
 
 				return undefined;
 			});
@@ -599,8 +641,8 @@
 			return;
 		}
 
-		$lastPipHeight$ = pipWindow.document.body.clientHeight;
-		$lastPipWidth$ = pipWindow.document.body.clientWidth;
+		settings.lastPipHeight = pipWindow.document.body.clientHeight;
+		settings.lastPipWidth = pipWindow.document.body.clientWidth;
 	}
 
 	function onAfkBlur(isAfk: boolean) {
@@ -613,20 +655,20 @@
 
 	function executeUpdateScroll(forceInstant: boolean = false) {
 		const scrollBehavior = forceInstant !== true ? listScrollBehavior : 'auto';
-		if ($lineData$.length > 0 && !showSearch) {
-			const targetIndex = mapIndex($lineData$.length - 1);
-			const alignment = $reverseLineOrder$ ? 'start' : 'end';
-			virtualListComponent?.scrollListToIndex(targetIndex, scrollBehavior, alignment);
+		if (dataState.lines.length > 0 && !showSearch) {
+			const targetIndex = mapIndex(dataState.lines.length - 1);
+			const alignment = settings.reverseLineOrder ? 'start' : 'end';
+			virtualListController.scrollListToIndex(targetIndex, scrollBehavior, alignment);
 		}
 		if (pipWindow) {
-			updateScroll(pipWindow, pipContainer, $reverseLineOrder$, false, listScrollBehavior);
+			updateScroll(pipWindow, pipContainer, settings.reverseLineOrder, false, listScrollBehavior);
 		}
 	}
 
 	function handleMissedLine() {
-		clearTimeout($flashOnPauseTimeout$);
+		clearTimeout(appState.flashOnPauseTimeout);
 
-		if ($theme$ === Theme.GARDEN) {
+		if (settings.theme === Theme.GARDEN) {
 			settingsContainer.classList.add('bg-base-200');
 			settingsContainer.classList.remove('bg-base-100');
 			document.body.classList.add('bg-base-200');
@@ -634,8 +676,8 @@
 
 		document.body.classList.add('animate-[pulse_0.5s_cubic-bezier(0.4,0,0.6,1)_1]');
 
-		$flashOnPauseTimeout$ = window.setTimeout(() => {
-			if ($theme$ === Theme.GARDEN) {
+		appState.flashOnPauseTimeout = window.setTimeout(() => {
+			if (settings.theme === Theme.GARDEN) {
 				settingsContainer.classList.add('bg-base-100');
 				settingsContainer.classList.remove('bg-base-200');
 
@@ -646,23 +688,27 @@
 		}, 500);
 	}
 
-	function transformLine(text: string, useReplacements = true) {
-		const textToAppend = useReplacements ? applyReplacements(text, $enabledReplacements$) : text;
+	function transformLine(
+		text: string,
+		useReplacements = true,
+		existingTexts: ReadonlyMap<string, number> = lineTextCounts,
+		excludedText?: string,
+	) {
+		const textToAppend = useReplacements ? applyReplacements(text, dataState.enabledReplacements) : text;
 
 		let canAppend = true;
-		let lineToAppend = $removeAllWhitespace$ ? textToAppend.replace(/\s/gm, '').trim() : textToAppend;
+		let lineToAppend = settings.removeAllWhitespace ? textToAppend.replace(/\s/gm, '').trim() : textToAppend;
 
-		if ($filterNonCJKLines$ && !lineToAppend.match(cjkCharacters)) {
+		if (settings.filterNonCJKLines && !lineToAppend.match(cjkCharacters)) {
 			lineToAppend = '';
 		}
 
 		if (!lineToAppend) {
 			canAppend = false;
-		} else if ($preventGlobalDuplicate$) {
-			canAppend = !$uniqueLines$.has(lineToAppend);
-			$uniqueLines$.add(lineToAppend);
-		} else if ($preventLastDuplicate$ && $lineData$.length) {
-			canAppend = $lineData$.slice(-$preventLastDuplicate$).every((line) => line.text !== lineToAppend);
+		} else if (settings.preventGlobalDuplicate) {
+			canAppend = (existingTexts.get(lineToAppend) ?? 0) <= (lineToAppend === excludedText ? 1 : 0);
+		} else if (settings.preventLastDuplicate && dataState.lines.length) {
+			canAppend = dataState.lines.slice(-settings.preventLastDuplicate).every((line) => line.text !== lineToAppend);
 		}
 
 		return canAppend ? lineToAppend : undefined;
@@ -670,74 +716,71 @@
 
 	function handleLineEdit({ inEdit, data }: LineItemEditEvent) {
 		if (data && data.originalText !== data.newText) {
-			const lineIndex = $lineData$.findIndex((l) => l.id === data.line.id);
+			const lineIndex = dataState.lines.findIndex((l) => l.id === data.line.id);
 			if (lineIndex !== -1) {
-				$uniqueLines$.delete(data.originalText);
-				const text = transformLine(data.newText);
+				const text = transformLine(data.newText, true, lineTextCounts, dataState.lines[lineIndex].text);
 
 				if (text) {
-					$lineData$[lineIndex] = { id: data.line.id, text };
-					const currentHistory = $actionHistory$;
-					currentHistory.push([{ ...data.line, index: lineIndex }]);
-					$actionHistory$ = currentHistory;
-					$uniqueLines$.add(text);
-				} else {
-					$uniqueLines$.add(data.originalText);
+					const currentLines = [...dataState.lines];
+					currentLines[lineIndex] = cacheLineCharacterCount({ id: data.line.id, text });
+					dataState.lines = currentLines;
+					dataState.actionHistory = [...dataState.actionHistory, [{ ...data.line, index: lineIndex }]];
 				}
 			}
 		}
 		lineInEdit = inEdit;
 	}
 
-	function applyMaxLinesAndGetRemainingLineData(diffMod = 0) {
-		const startIndex = $maxLines$ ? $lineData$.length - $maxLines$ + diffMod : 0;
+	function applyMaxLinesAndGetRemainingLineData(diffMod = 0, currentLines = dataState.lines) {
+		const startIndex = settings.maxLines ? currentLines.length - settings.maxLines + diffMod : 0;
 		if (startIndex > 0) {
 			const oldLinesToRemove = new Set<string>();
 			const virtualIndicesToRemove: number[] = [];
 
 			for (let i = 0; i < startIndex; i++) {
-				virtualIndicesToRemove.push(mapIndex(i));
+				virtualIndicesToRemove.push(mapIndex(i, currentLines.length));
 			}
 
-			const removed = $lineData$.splice(0, startIndex);
+			const removed = currentLines.slice(0, startIndex);
 			for (let i = 0; i < removed.length; i++) {
 				oldLinesToRemove.add(removed[i].id);
-				$uniqueLines$.delete(removed[i].text);
+
 				lineSizes.delete(removed[i].id);
 			}
 			if (oldLinesToRemove.size) {
 				selectedLineIds = selectedLineIds.filter((selectedLineId) => !oldLinesToRemove.has(selectedLineId));
-				virtualListComponent?.removeIndices(virtualIndicesToRemove);
+				virtualListController.removeIndices(virtualIndicesToRemove);
 			}
 		}
-		return $lineData$;
+		return currentLines.slice(Math.max(0, startIndex));
 	}
 
 	async function updateLineData(executeUpdate: boolean) {
 		if (!executeUpdate) return;
-		$showSpinner$ = true;
+		appState.showSpinner = true;
 		await tick();
 		let hasChanges = false;
+		let currentLines = [...dataState.lines];
+		const workingTexts = new Map(lineTextCounts);
 		try {
 			const linesToRemove = new Set<string>();
 			const virtualIndicesToRemove: number[] = [];
 			const virtualIndicesToInvalidate: number[] = [];
 			const CHUNK_SIZE = 100;
 
-			for (let index = 0; index < $lineData$.length; index++) {
-				const line = $lineData$[index];
-				const newText = transformLine(line.text);
+			for (let index = 0; index < currentLines.length; index++) {
+				const line = currentLines[index];
+				changeTextCount(workingTexts, line.text, -1);
+				const newText = transformLine(line.text, true, workingTexts);
+				if (newText) changeTextCount(workingTexts, newText, 1);
 
 				if (!newText) {
 					linesToRemove.add(line.id);
-					$uniqueLines$.delete(line.text);
 					lineSizes.delete(line.id);
 					virtualIndicesToRemove.push(mapIndex(index));
 					hasChanges = true;
 				} else if (newText !== line.text) {
-					$uniqueLines$.delete(line.text);
-					$uniqueLines$.add(newText);
-					$lineData$[index] = { ...line, text: newText };
+					currentLines[index] = cacheLineCharacterCount({ ...line, text: newText });
 					lineSizes.delete(line.id);
 					virtualIndicesToInvalidate.push(mapIndex(index));
 					hasChanges = true;
@@ -748,20 +791,20 @@
 			}
 
 			if (hasChanges) {
-				virtualListComponent?.invalidateIndices(virtualIndicesToInvalidate);
+				virtualListController.invalidateIndices(virtualIndicesToInvalidate);
 				if (linesToRemove.size > 0) {
-					$lineData$ = $lineData$.filter((line) => !linesToRemove.has(line.id));
+					currentLines = currentLines.filter((line) => !linesToRemove.has(line.id));
 					selectedLineIds = selectedLineIds.filter((id) => !linesToRemove.has(id));
-					virtualListComponent?.removeIndices(virtualIndicesToRemove);
+					virtualListController.removeIndices(virtualIndicesToRemove);
 				}
 
-				$openDialog$ = { message: `Operation executed`, showCancel: false };
+				dialogState.open({ message: `Operation executed`, showCancel: false });
 			}
 		} catch ({ message }) {
-			$openDialog$ = { type: 'error', message: `An Error occured: ${message}`, showCancel: false };
+			dialogState.open({ type: 'error', message: `An Error occured: ${message}`, showCancel: false });
 		} finally {
-			$lineData$ = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData());
-			$showSpinner$ = false;
+			dataState.lines = applyEqualLineStartMerge(applyMaxLinesAndGetRemainingLineData(0, currentLines));
+			appState.showSpinner = false;
 
 			await tick();
 
@@ -774,7 +817,7 @@
 	}
 
 	function applyEqualLineStartMerge(currentLineData: LineItem[]) {
-		if (!$mergeEqualLineStarts$ || currentLineData.length < 2) {
+		if (!settings.mergeEqualLineStarts || currentLineData.length < 2) {
 			return currentLineData;
 		}
 
@@ -784,86 +827,60 @@
 		const comparisonLine = currentLineData[comparisonIndex].text;
 
 		if (lastLine.text.startsWith(comparisonLine)) {
-			$uniqueLines$.delete(comparisonLine);
+
 
 			selectedLineIds = selectedLineIds.filter(
 				(selectedLineId) => selectedLineId !== currentLineData[comparisonIndex].id,
 			);
 
 			lineSizes.delete(currentLineData[comparisonIndex].id);
-			const virtualIndexToRemove = mapIndex(comparisonIndex);
+			const virtualIndexToRemove = mapIndex(comparisonIndex, currentLineData.length);
 			currentLineData.splice(comparisonIndex, 2, lastLine);
-			virtualListComponent?.removeIndices([virtualIndexToRemove]);
+			virtualListController.removeIndices([virtualIndexToRemove]);
 		}
 
 		return currentLineData;
 	}
 	let iconSize = $derived(isSmFactor ? '1.5rem' : '1.25rem');
-	let listScrollBehavior: ScrollBehavior = $derived($enableLineAnimation$ ? 'smooth' : 'auto');
-	$effect(() => {
-		const enabled = $replacements$.filter((replacement) => replacement.enabled);
-		untrack(() => {
-			$enabledReplacements$ = enabled;
-			clearReplacementCaches();
-		});
-	});
+	let listScrollBehavior: ScrollBehavior = $derived(settings.enableLineAnimation ? 'smooth' : 'auto');
 	let pipAvailable = $derived('documentPictureInPicture' in window && !!pipContainer);
-	let pipLines = $derived(pipAvailable && $lineData$ ? $lineData$.slice(-$maxPipLines$) : []);
-	let estimatedItemSize = $derived($displayVertical$ ? estimatedLineWidth : estimatedLineHeight);
+	let pipLines = $derived(pipAvailable && dataState.lines ? dataState.lines.slice(-settings.maxPipLines) : []);
+	let estimatedItemSize = $derived(settings.displayVertical ? estimatedLineWidth : estimatedLineHeight);
+
 	$effect(() => {
 		if (pipWindow) {
-			pipWindow.document.body.dataset.theme = $theme$;
-			applyCustomCSS(pipWindow.document, $customCSS$);
+			pipWindow.document.body.dataset.theme = settings.theme;
+			applyCustomCSS(pipWindow.document, settings.customCSS);
 		}
 	});
 	$effect(() => {
-		if (!$showSpinner$ && !untrack(() => initialScrollDone)) {
+		if (!appState.showSpinner && !untrack(() => initialScrollDone)) {
 			initialScrollDone = true;
 			tick().then(() => executeUpdateScroll(true));
 		}
 	});
 	$effect(() => {
-		const currentReflowDimension = $displayVertical$ ? listHeight : listWidth;
+		const currentReflowDimension = settings.displayVertical ? listHeight : listWidth;
 		if (currentReflowDimension !== lastReflowDimension) {
 			if (lastReflowDimension !== 0) {
 				untrack(() => {
 					lineSizes.clear();
-					virtualListComponent?.clearCache();
+					virtualListController.clearCache();
 					tick().then(remeasureMountedLines);
 				});
 			}
 			lastReflowDimension = currentReflowDimension;
 		}
 	});
-	const lineLayoutSettings = $derived({
-		vertical: $displayVertical$,
-		reversed: $reverseLineOrder$,
-		fontSize: $fontSize$,
-		font: $onlineFont$,
-		padding: $linePadding$,
-		points: $showLinePoints$,
-		customCSS: $customCSS$,
-		preserveWhitespace: $preserveWhitespace$,
-		milestone: $characterMilestone$,
-	});
+
 	$effect(() => {
-		lineLayoutSettings;
-		untrack(() => {
-			lineSizes.clear();
-			virtualListComponent?.clearCache();
-			tick().then(remeasureMountedLines);
-		});
-	});
-	$effect(() => {
-		if ($onlineFont$ && document.fonts) {
-			document.fonts.ready.then(() => {
-				tick().then(remeasureMountedLines);
-			});
+		if (settings.onlineFont && document.fonts) {
+			document.fonts.ready.then(remeasureMountedLines);
 		}
 	});
 	$effect(() => {
-		const currentMilestoneMap = $milestoneLines$;
-		const lines = $lineData$;
+		const currentMilestoneMap = lineStatistics.milestoneLines;
+		const lines = dataState.lines;
 		untrack(() => {
 			const currentIds = new Set(currentMilestoneMap ? currentMilestoneMap.keys() : []);
 			const changedLineIds: string[] = [];
@@ -897,7 +914,7 @@
 				}
 
 				if (hasCachedChanges) {
-					virtualListComponent?.invalidateIndices(invalidVirtualIndices);
+					virtualListController.invalidateIndices(invalidVirtualIndices);
 					tick().then(remeasureMountedLines);
 				}
 			}
@@ -905,42 +922,27 @@
 	});
 	let lowerQuery = $derived(searchQuery.trim().toLowerCase());
 	let matchIndices = $derived(
-		lowerQuery && $lineData$
-			? $lineData$
+		lowerQuery && dataState.lines
+			? dataState.lines
 					.map((line, index) => (line.text.toLowerCase().includes(lowerQuery) ? index : -1))
 					.filter((index) => index !== -1)
 			: [],
 	);
+	let currentMatchStep = $derived(Math.min(requestedMatchStep, Math.max(0, matchIndices.length - 1)));
 	let searchJumpIndex = $derived(matchIndices[currentMatchStep]);
-	$effect(() => {
-		const query = lowerQuery;
-		const matchCount = matchIndices.length;
-		untrack(() => {
-			if (!query || query !== prevLowerQuery) {
-				currentMatchStep = 0;
-			} else if (currentMatchStep >= matchCount) {
-				currentMatchStep = Math.max(0, matchCount - 1);
-			}
-			prevLowerQuery = query;
-		});
-	});
 	$effect(() => {
 		const target = searchJumpIndex;
 		if (target !== undefined) {
-			untrack(() => virtualListComponent?.scrollListToIndex(mapIndex(target), 'auto', 'center'));
+			untrack(() => virtualListController.scrollListToIndex(mapIndex(target), 'auto', 'center'));
 		}
 	});
 </script>
 
-<svelte:window onkeyup={handleKeyUp} onkeydown={handleKeyDown} />
+<svelte:document onpaste={handlePaste} onvisibilitychange={handleVisibilityChange} />
 
-{$visibilityHandler$ ?? ''}
-{$handleLine$ ?? ''}
-{$pasteHandler$ ?? ''}
-{$copyBlocker$ ?? ''}
-{$resizeHandler$ ?? ''}
+<svelte:window onkeyup={handleKeyUp} onkeydown={handleKeyDown} onresize={handleResize} />
 
-{#if $showSpinner$}
+{#if appState.showSpinner}
 	<Spinner />
 {/if}
 
@@ -953,7 +955,8 @@
 	>
 		<input
 			bind:this={searchInputElement}
-			bind:value={searchQuery}
+			value={searchQuery}
+			oninput={handleSearchInput}
 			type="text"
 			placeholder="Search text..."
 			class="input input-sm input-bordered w-64"
@@ -996,32 +999,32 @@
 	bind:this={settingsContainer}
 >
 	<Stats onafkBlur={onAfkBlur} />
-	{#if $websocketUrl$}
+	{#if settings.websocketUrl}
 		<SocketConnector />
 	{/if}
-	{#if $secondaryWebsocketUrl$}
+	{#if settings.secondaryWebsocketUrl}
 		<SocketConnector isPrimary={false} />
 	{/if}
-	{#if $isPaused$}
+	{#if appState.isPaused}
 		<div
 			role="button"
 			title="Continue"
 			class="mr-1 animate-[pulse_1.25s_cubic-bezier(0.4,0,0.6,1)_infinite] hover:text-primary sm:mr-2"
 		>
-			<Icon path={mdiPlay} width={iconSize} height={iconSize} onclick={() => ($isPaused$ = false)} />
+			<Icon path={mdiPlay} width={iconSize} height={iconSize} onclick={() => (setPaused(false))} />
 		</div>
 	{:else}
 		<div role="button" title="Pause" class="mr-1 hover:text-primary sm:mr-2">
-			<Icon path={mdiPause} width={iconSize} height={iconSize} onclick={() => ($isPaused$ = true)} />
+			<Icon path={mdiPause} width={iconSize} height={iconSize} onclick={() => (setPaused(true))} />
 		</div>
 	{/if}
 	<div
 		role="button"
 		title="Delete last Line"
 		class="mr-1 hover:text-primary sm:mr-2"
-		class:opacity-50={!$lineData$.length}
-		class:cursor-not-allowed={!$lineData$.length}
-		class:hover:text-primary={$lineData$.length}
+		class:opacity-50={!dataState.lines.length}
+		class:cursor-not-allowed={!dataState.lines.length}
+		class:hover:text-primary={dataState.lines.length}
 	>
 		<Icon path={mdiDeleteForever} width={iconSize} height={iconSize} onclick={removeLastLine} />
 	</div>
@@ -1029,9 +1032,9 @@
 		role="button"
 		title="Undo last Action"
 		class="mr-1 hover:text-primary sm:mr-2"
-		class:opacity-50={!$actionHistory$.length}
-		class:cursor-not-allowed={!$actionHistory$.length}
-		class:hover:text-primary={$actionHistory$.length}
+		class:opacity-50={!dataState.actionHistory.length}
+		class:cursor-not-allowed={!dataState.actionHistory.length}
+		class:hover:text-primary={dataState.actionHistory.length}
 	>
 		<Icon path={mdiArrowULeftTop} width={iconSize} height={iconSize} onclick={undoLastAction} />
 	</div>
@@ -1044,7 +1047,7 @@
 		</div>
 	{/if}
 	<div role="button" title="Open Notes" class="mr-1 hover:text-primary sm:mr-2">
-		<Icon path={mdiNoteEdit} width={iconSize} height={iconSize} onclick={() => ($notesOpen$ = true)} />
+		<Icon path={mdiNoteEdit} width={iconSize} height={iconSize} onclick={() => (settings.notesOpen = true)} />
 	</div>
 	{#if pipAvailable}
 		<div
@@ -1074,60 +1077,52 @@
 		{pipAvailable}
 		bind:settingsOpen
 		bind:selectedLineIds
-		bind:this={settingsComponent}
-		onapplyReplacements={() => updateLineData(!!$enabledReplacements$.length)}
-		onlayoutChange={() => executeUpdateScroll(true)}
-		onmaxLinesChange={() => ($lineData$ = applyMaxLinesAndGetRemainingLineData())}
+		onreset={handleReset}
+		onapplyReplacements={() => updateLineData(!!dataState.enabledReplacements.length)}
+		onlayoutChange={handleLayoutInvalidation}
+		onmaxLinesChange={() => (dataState.lines = applyMaxLinesAndGetRemainingLineData())}
 		onlinesRemoved={(ids, indices) => {
 			ids.forEach((id) => lineSizes.delete(id));
-			const previousCount = $lineData$.length + indices.length;
-			virtualListComponent?.removeIndices(indices.map((index) => mapIndex(index, previousCount)));
+			const previousCount = dataState.lines.length + indices.length;
+			virtualListController.removeIndices(indices.map((index) => mapIndex(index, previousCount)));
 			tick().then(() => executeUpdateScroll(true));
 		}}
 		onlinesChanged={(ids, indices) => {
 			ids.forEach((id) => lineSizes.delete(id));
-			virtualListComponent?.invalidateIndices(indices.map((index) => mapIndex(index)));
+			virtualListController.invalidateIndices(indices.map((index) => mapIndex(index)));
 			tick().then(() => {
 				remeasureMountedLines();
 				executeUpdateScroll(true);
 			});
 		}}
-		ondataResetOrImported={() => {
-			deselectLines();
-			lineSizes.clear();
-			virtualListComponent?.clearCache();
-			tick().then(() => {
-				remeasureMountedLines();
-				executeUpdateScroll(true);
-			});
-		}}
+		ondataResetOrImported={handleDataResetOrImported}
 	/>
-	<Presets isQuickSwitch={true} onlayoutChange={() => executeUpdateScroll(true)} />
+	<Presets isQuickSwitch={true} onlayoutChange={handleLayoutInvalidation} />
 </header>
 <main
 	class="flex flex-col flex-1 break-all w-full h-full overflow-hidden relative"
-	class:pt-8={$displayVertical$}
-	class:opacity-50={$notesOpen$}
-	style:font-size={`${$fontSize$}px`}
-	style:font-family={$onlineFont$ !== OnlineFont.OFF ? $onlineFont$ : 'undefined'}
-	style:writing-mode={$displayVertical$ ? 'vertical-rl' : 'horizontal-tb'}
+	class:pt-8={settings.displayVertical}
+	class:opacity-50={settings.notesOpen}
+	style:font-size={`${settings.fontSize}px`}
+	style:font-family={settings.onlineFont !== OnlineFont.OFF ? settings.onlineFont : 'undefined'}
+	style:writing-mode={settings.displayVertical ? 'vertical-rl' : 'horizontal-tb'}
 >
 	<div
 		aria-hidden="true"
 		class="absolute invisible pointer-events-none opacity-0 -z-50 flex"
-		class:flex-col={!$displayVertical$}
+		class:flex-col={!settings.displayVertical}
 		bind:offsetHeight={estimatedLineHeight}
 		bind:offsetWidth={estimatedLineWidth}
 	>
 		<p
 			class="my-2 border-2 border-transparent"
-			class:px-2={!$displayVertical$}
-			class:py-2={$displayVertical$}
-			class:show-bullet={$showLinePoints$}
-			style:padding-top={!$displayVertical$ ? `${$linePadding$}rem` : undefined}
-			style:padding-bottom={!$displayVertical$ ? `${$linePadding$}rem` : undefined}
-			style:padding-left={$displayVertical$ ? `${$linePadding$}rem` : undefined}
-			style:padding-right={$displayVertical$ ? `${$linePadding$}rem` : undefined}
+			class:px-2={!settings.displayVertical}
+			class:py-2={settings.displayVertical}
+			class:show-bullet={settings.showLinePoints}
+			style:padding-top={!settings.displayVertical ? `${settings.linePadding}rem` : undefined}
+			style:padding-bottom={!settings.displayVertical ? `${settings.linePadding}rem` : undefined}
+			style:padding-left={settings.displayVertical ? `${settings.linePadding}rem` : undefined}
+			style:padding-right={settings.displayVertical ? `${settings.linePadding}rem` : undefined}
 		>
 			トランスジェンダーの権利
 		</p>
@@ -1141,13 +1136,13 @@
 		{#if listWidth && listHeight}
 			<div class="absolute inset-0">
 				<VirtualList
-					bind:this={virtualListComponent}
+					controller={virtualListController}
 					width="{listWidth}px"
 					height="{listHeight}px"
-					itemCount={$lineData$.length}
+					itemCount={dataState.lines.length}
 					itemSize={virtualItemSize}
 					{estimatedItemSize}
-					scrollDirection={$displayVertical$ ? 'horizontal' : 'vertical'}
+					scrollDirection={settings.displayVertical ? 'horizontal' : 'vertical'}
 					padding="2rem"
 				>
 					{#snippet item({ index, style })}
@@ -1155,27 +1150,27 @@
 						<div
 							{style}
 							class="absolute"
-							class:px-4={!$displayVertical$}
-							class:py-4={$displayVertical$}
-							class:w-full={!$displayVertical$}
-							class:h-full={$displayVertical$}
+							class:px-4={!settings.displayVertical}
+							class:py-4={settings.displayVertical}
+							class:w-full={!settings.displayVertical}
+							class:h-full={settings.displayVertical}
 						>
-							{#if $lineData$[actualIndex]}
+							{#if dataState.lines[actualIndex]}
 								<div
-									use:measureSize={{ line: $lineData$[actualIndex], virtual: index }}
+									use:measureSize={{ line: dataState.lines[actualIndex], virtual: index }}
 									class="flex flex-col"
-									class:w-full={!$displayVertical$}
-									class:h-full={$displayVertical$}
+									class:w-full={!settings.displayVertical}
+									class:h-full={settings.displayVertical}
 								>
 									<div
 										class="transition-colors duration-200 rounded"
-										class:w-full={!$displayVertical$}
-										class:h-full={$displayVertical$}
+										class:w-full={!settings.displayVertical}
+										class:h-full={settings.displayVertical}
 									>
-										{#key $lineData$[actualIndex].id}
+										{#key dataState.lines[actualIndex].id}
 											<Line
-												line={$lineData$[actualIndex]}
-												isSelected={selectedLineIds.includes($lineData$[actualIndex].id)}
+												line={dataState.lines[actualIndex]}
+												isSelected={selectedLineIds.includes(dataState.lines[actualIndex].id)}
 												searchQuery={showSearch && matchIndices.includes(actualIndex)
 													? searchQuery.trim()
 													: ''}
@@ -1201,10 +1196,10 @@
 		{/if}
 	</div>
 </main>
-{#if $notesOpen$}
+{#if settings.notesOpen}
 	<div
 		class="bg-base-200 fixed top-0 right-0 z-[60] flex h-full w-full max-w-3xl flex-col justify-between"
-		in:fly|local={{ x: 100, duration: 100, easing: quintInOut }}
+		in:fly={{ x: 100, duration: 100, easing: quintInOut }}
 	>
 		<Notes />
 	</div>
@@ -1212,12 +1207,12 @@
 <div
 	id="pip-container"
 	class="flex-1 flex flex-col break-all w-full h-full overflow-auto"
-	class:flex-col-reverse={$reverseLineOrder$}
+	class:flex-col-reverse={settings.reverseLineOrder}
 	class:hidden={!pipWindow}
-	style:font-size={`${$fontSize$}px`}
-	style:font-family={$onlineFont$ !== OnlineFont.OFF ? $onlineFont$ : 'undefined'}
-	style:padding-top={`${$linePadding$}rem`}
-	style:padding-bottom={`${$linePadding$}rem`}
+	style:font-size={`${settings.fontSize}px`}
+	style:font-family={settings.onlineFont !== OnlineFont.OFF ? settings.onlineFont : 'undefined'}
+	style:padding-top={`${settings.linePadding}rem`}
+	style:padding-bottom={`${settings.linePadding}rem`}
 	bind:this={pipContainer}
 >
 	{#if pipWindow}

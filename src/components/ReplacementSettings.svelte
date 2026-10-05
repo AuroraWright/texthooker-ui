@@ -1,27 +1,27 @@
 <script lang="ts">
+	import { dataState } from '../stores/data-state.svelte';
+
 	interface Props {
 		onapplyReplacements?: () => void;
 	}
 	let { onapplyReplacements }: Props = $props();
 
 	import { mdiPlus } from '@mdi/js';
-	import { replacements$ } from '../stores/stores';
 	import type { ReplacementItem } from '../types';
 	import Icon from './Icon.svelte';
 	import ReplacementSettingsInput from './ReplacementSettingsInput.svelte';
 	import ReplacementSettingsList from './ReplacementSettingsList.svelte';
 
-	let inEditMode = $state(false);
+	let editSession = $state.raw<{
+		replacements: ReplacementItem[];
+		currentReplacement: ReplacementItem | undefined;
+	}>();
+	let inEditMode = $derived(!!editSession && editSession.replacements === dataState.replacements);
 
-	let currentReplacement: ReplacementItem | undefined = $state();
-
-	function resetEditMode(_replacements: ReplacementItem[]) {
-		inEditMode = false;
+	function startEditing(currentReplacement: ReplacementItem | undefined) {
+		editSession = { replacements: dataState.replacements, currentReplacement };
 	}
-	let hasReplacements = $derived(!!$replacements$.length);
-	$effect(() => {
-		resetEditMode($replacements$);
-	});
+	let hasReplacements = $derived(!!dataState.replacements.length);
 </script>
 
 <details class="col-span-4 mb-2 cursor-pointer max-w-lg">
@@ -29,25 +29,14 @@
 	<div class="mb-8">
 		{#if inEditMode}
 			<ReplacementSettingsInput
-				{currentReplacement}
-				onclose={() => {
-					inEditMode = false;
-					currentReplacement = undefined;
-				}}
+				currentReplacement={editSession.currentReplacement}
+				onclose={() => (editSession = undefined)}
 			/>
 		{:else if hasReplacements}
-			{#key $replacements$}
-				<ReplacementSettingsList
-					onedit={(detail) => {
-						currentReplacement = detail;
-						inEditMode = true;
-					}}
-					{onapplyReplacements}
-				/>
-			{/key}
+			<ReplacementSettingsList onedit={startEditing} {onapplyReplacements} />
 		{:else}
 			<div class="flex justify-end my-2">
-				<button title="Add replacement" class="ml-2 hover:text-primary" onclick={() => (inEditMode = true)}>
+				<button title="Add replacement" class="ml-2 hover:text-primary" onclick={() => startEditing(undefined)}>
 					<Icon path={mdiPlus} />
 				</button>
 			</div>
