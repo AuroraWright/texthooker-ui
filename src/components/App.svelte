@@ -80,14 +80,6 @@
 	const wakeLockAvailable = 'wakeLock' in navigator;
 	const cjkCharacters = /[\p{scx=Hira}\p{scx=Kana}\p{scx=Han}]/imu;
 
-	const lineTextCounts = $derived.by(() => {
-		const counts = new Map<string, number>();
-		if (settings.preventGlobalDuplicate) {
-			for (const line of dataState.lines) changeTextCount(counts, line.text, 1);
-		}
-		return counts;
-	});
-
 	function changeTextCount(counts: Map<string, number>, text: string, delta: number) {
 		const count = (counts.get(text) ?? 0) + delta;
 		if (count > 0) counts.set(text, count);
@@ -126,7 +118,6 @@
 
 		if (text) {
 			const isPaste = lineType === LineType.PASTE;
-			const currentLines = applyMaxLinesAndGetRemainingLineData(1);
 			const newId = generateRandomUUID();
 			const item = cacheLineCharacterCount({ id: newId, text });
 
@@ -136,11 +127,17 @@
 			if (pipWindow) {
 				pipNewLines.add(item);
 			}
-			currentLines.push(item);
-			if (settings.reverseLineOrder) {
-				virtualListController.shiftIndices(1);
+			const remainingCount = dataState.lines.length - prepareLeadingLineRemoval(1);
+			const previous = remainingCount > 0 ? dataState.lines[dataState.lines.length - 1] : undefined;
+			const mergePrevious = !!(settings.mergeEqualLineStarts && previous && text.startsWith(previous.text));
+			const removeFirst = dataState.lines.length - remainingCount;
+			if (settings.reverseLineOrder) virtualListController.shiftIndices(1);
+			dataState.appendLine(item, removeFirst, mergePrevious);
+			if (mergePrevious && previous) {
+				selectedLineIds = selectedLineIds.filter((id) => id !== previous.id);
+				lineSizes.delete(previous.id);
+				virtualListController.removeIndices([mapIndex(remainingCount - 1, remainingCount + 1)]);
 			}
-			dataState.lines = applyEqualLineStartMerge(currentLines);
 			tick().then(() => executeUpdateScroll());
 
 			if (
@@ -451,7 +448,7 @@
 		const history = dataState.actionHistory.slice(0, -1);
 		const linesToRevert = [...dataState.actionHistory[dataState.actionHistory.length - 1]];
 		const currentLines = [...dataState.lines];
-		const workingTexts = new Map(lineTextCounts);
+		const workingTexts = new Map(dataState.lineTextCounts);
 		let lineToRevert = linesToRevert.pop();
 		const restoredIds = new Set<string>();
 		const editedIds = new Set<string>();
@@ -691,7 +688,7 @@
 	function transformLine(
 		text: string,
 		useReplacements = true,
-		existingTexts: ReadonlyMap<string, number> = lineTextCounts,
+		existingTexts: ReadonlyMap<string, number> = dataState.lineTextCounts,
 		excludedText?: string,
 	) {
 		const textToAppend = useReplacements ? applyReplacements(text, dataState.enabledReplacements) : text;
@@ -718,7 +715,7 @@
 		if (data && data.originalText !== data.newText) {
 			const lineIndex = dataState.lines.findIndex((l) => l.id === data.line.id);
 			if (lineIndex !== -1) {
-				const text = transformLine(data.newText, true, lineTextCounts, dataState.lines[lineIndex].text);
+				const text = transformLine(data.newText, true, dataState.lineTextCounts, dataState.lines[lineIndex].text);
 
 				if (text) {
 					const currentLines = [...dataState.lines];
@@ -731,7 +728,7 @@
 		lineInEdit = inEdit;
 	}
 
-	function applyMaxLinesAndGetRemainingLineData(diffMod = 0, currentLines = dataState.lines) {
+	function prepareLeadingLineRemoval(diffMod = 0, currentLines = dataState.lines) {
 		const startIndex = settings.maxLines ? currentLines.length - settings.maxLines + diffMod : 0;
 		if (startIndex > 0) {
 			const oldLinesToRemove = new Set<string>();
@@ -752,7 +749,11 @@
 				virtualListController.removeIndices(virtualIndicesToRemove);
 			}
 		}
-		return currentLines.slice(Math.max(0, startIndex));
+		return Math.max(0, startIndex);
+	}
+
+	function applyMaxLinesAndGetRemainingLineData(diffMod = 0, currentLines = dataState.lines) {
+		return currentLines.slice(prepareLeadingLineRemoval(diffMod, currentLines));
 	}
 
 	async function updateLineData(executeUpdate: boolean) {
@@ -761,7 +762,7 @@
 		await tick();
 		let hasChanges = false;
 		let currentLines = [...dataState.lines];
-		const workingTexts = new Map(lineTextCounts);
+		const workingTexts = new Map(dataState.lineTextCounts);
 		try {
 			const linesToRemove = new Set<string>();
 			const virtualIndicesToRemove: number[] = [];

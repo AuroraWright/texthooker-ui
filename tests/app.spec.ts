@@ -698,6 +698,42 @@ test('milestones, whitespace and maximum history size remain reactive', async ({
 	await expect(page.locator('.timer')).toContainText('6 / 2');
 });
 
+test('enabling statistics counts stored and newly appended lines after starting with statistics disabled', async ({ page }) => {
+	await page.addInitScript(() => {
+		localStorage.setItem('bannou-texthooker-showCharacterCount', '0');
+		localStorage.setItem('bannou-texthooker-showSpeed', '0');
+		localStorage.setItem('bannou-texthooker-lineData', JSON.stringify([
+			{ id: 'stored-a', text: '日本語𠮷' }, { id: 'stored-b', text: '次の文' },
+		]));
+	});
+	await page.goto('/');
+	await expect(lines(page)).toHaveCount(2);
+	await paste(page, '追加文');
+	await expect(lines(page)).toHaveCount(3);
+	await openSettings(page);
+	await setting(page, 'Show Character Count').check();
+	await closeSettings(page);
+	await expect(page.locator('.timer')).toContainText('10 / 3');
+	await paste(page, '最後文');
+	await expect(page.locator('.timer')).toContainText('13 / 4');
+});
+
+for (const reversed of [false, true]) {
+	test(`incremental duplicate counts survive history limits and prefix merging (reversed=${reversed})`, async ({ page }) => {
+		await page.addInitScript((reversed) => {
+			localStorage.setItem('bannou-texthooker-preventGlobalDuplicate', '1');
+			localStorage.setItem('bannou-texthooker-maxLines', '3');
+			localStorage.setItem('bannou-texthooker-mergeEqualLineStarts', '1');
+			localStorage.setItem('bannou-texthooker-reverseLineOrder', reversed ? '1' : '0');
+		}, reversed);
+		await page.goto('/');
+		for (const text of ['猫', '猫の文章', '犬', '鳥', '魚', '猫の文章', '魚']) await paste(page, text);
+		await expect(lines(page)).toHaveText(reversed ? ['猫の文章', '魚', '鳥'] : ['鳥', '魚', '猫の文章']);
+		await expect(page.locator('.timer')).toContainText('6 / 3');
+		await expect.poll(async () => (await storedLines(page)).map((line) => line.text)).toEqual(['鳥', '魚', '猫の文章']);
+	});
+}
+
 test('derived counts stay current with hidden totals, edits, undo and milestone toggles', async ({ page }) => {
 	await page.addInitScript(() => {
 		localStorage.setItem('bannou-texthooker-showCharacterCount', '0');

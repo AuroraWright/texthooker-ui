@@ -23,7 +23,8 @@ export class LineStatistics {
 	});
 
 	characters = $derived(this.#statistics.characters);
-	milestoneLines = $derived(this.#statistics.milestoneLines);
+	milestoneLines = $derived(settings.characterMilestone > 1 ? this.#statistics.milestoneLines : emptyMilestones);
 }
 
+const emptyMilestones: ReadonlyMap<string, string> = new Map();
 export const lineStatistics = new LineStatistics();

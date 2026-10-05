@@ -3,6 +3,7 @@
 
 	import { onMount, tick } from 'svelte';
 	import type { VirtualListController } from '../virtual-list-controller';
+	import { VirtualListMeasurements } from '../virtual-list-measurements';
 
 	interface Props {
 		controller: VirtualListController;
@@ -44,8 +45,7 @@
 		{ index: number; alignment: 'start' | 'center' | 'end' | 'auto'; behavior: ScrollBehavior } | undefined =
 		undefined;
 	let scrollTargetTimeout: number;
-	let sizeCache: number[] = [];
-	let offsetCache: number[] = [0];
+	const measurements = new VirtualListMeasurements();
 	let _prevItemCount = untrack(() => itemCount);
 	let _prevScrollDirection = untrack(() => scrollDirection);
 	let _prevEstimatedItemSize = untrack(() => estimatedItemSize);
@@ -53,16 +53,10 @@
 	function invalidateIndices(indices: number[]) {
 		if (!indices || indices.length === 0) return;
 
-		let lowestChangedIndex = offsetCache.length;
-
 		for (const index of indices) {
-			sizeCache[index] = undefined;
-			if (index < lowestChangedIndex) {
-				lowestChangedIndex = index;
-			}
+			measurements.delete(index);
+			getSize(index);
 		}
-
-		offsetCache.length = Math.min(offsetCache.length, lowestChangedIndex + 1);
 		updateState();
 	}
 
@@ -70,20 +64,11 @@
 		if (!indices || indices.length === 0) return;
 
 		const sortedIndices = [...indices].sort((a, b) => b - a);
-		let lowestChangedIndex = offsetCache.length;
-
+		measurements.remove(sortedIndices);
 		for (const index of sortedIndices) {
-			if (index < sizeCache.length) {
-				sizeCache.splice(index, 1);
-			}
-			if (index < lowestChangedIndex) {
-				lowestChangedIndex = index;
-			}
 			if (index < lastFirstVisibleIndex) lastFirstVisibleIndex--;
 			if (index < lastLastVisibleIndex) lastLastVisibleIndex--;
 		}
-
-		offsetCache.length = Math.min(offsetCache.length, lowestChangedIndex + 1);
 		_prevItemCount -= indices.length;
 		updateState();
 	}
@@ -92,20 +77,11 @@
 		if (!indices || indices.length === 0) return;
 
 		const sortedIndices = [...indices].sort((a, b) => a - b);
-		let lowestChangedIndex = offsetCache.length;
-
+		measurements.insert(sortedIndices);
 		for (const index of sortedIndices) {
-			if (index <= sizeCache.length) {
-				sizeCache.splice(index, 0, undefined as any);
-			}
-			if (index < lowestChangedIndex) {
-				lowestChangedIndex = index;
-			}
 			if (index <= lastFirstVisibleIndex) lastFirstVisibleIndex++;
 			if (index <= lastLastVisibleIndex) lastLastVisibleIndex++;
 		}
-
-		offsetCache.length = Math.min(offsetCache.length, lowestChangedIndex + 1);
 		_prevItemCount += indices.length;
 		updateState();
 	}
@@ -113,19 +89,15 @@
 	function shiftIndices(shiftAmount: number) {
 		if (!shiftAmount || shiftAmount <= 0) return;
 
-		const newEmptySlots = new Array(shiftAmount).fill(undefined);
-
-		sizeCache = [...newEmptySlots, ...sizeCache];
-		offsetCache = [0];
+		measurements.shift(shiftAmount);
 		_prevItemCount += shiftAmount;
 		lastFirstVisibleIndex += shiftAmount;
 		lastLastVisibleIndex += shiftAmount;
-		updateState();
+		scheduleUpdateState();
 	}
 
 	function clearCache() {
-		sizeCache = [];
-		offsetCache = [0];
+		measurements.clear();
 		lastTotalSize = 0;
 		updateState();
 	}
@@ -141,7 +113,8 @@
 	}
 
 	function getSize(index: number) {
-		if (sizeCache[index] !== undefined) return sizeCache[index];
+		const cached = measurements.get(index);
+		if (cached !== undefined) return cached;
 
 		let size = untrack(() => estimatedItemSize);
 		let isMeasured = false;
@@ -153,24 +126,14 @@
 		}
 
 		if (isMeasured) {
-			sizeCache[index] = size;
+			measurements.set(index, size);
 		}
 
 		return size;
 	}
 
 	function getOffset(index: number) {
-		if (offsetCache[index] !== undefined) return offsetCache[index];
-
-		let lastCalculatedIndex = offsetCache.length - 1;
-		let offset = offsetCache[lastCalculatedIndex];
-
-		for (let i = lastCalculatedIndex; i < index; i++) {
-			offset += getSize(i);
-			offsetCache[i + 1] = offset;
-		}
-
-		return offset;
+		return measurements.offset(index, estimatedItemSize);
 	}
 
 	function findNearestItem(offset: number) {
@@ -179,7 +142,7 @@
 
 		while (low <= high) {
 			const mid = Math.floor((low + high) / 2);
-			const currentOffset = offsetCache[mid] !== undefined ? offsetCache[mid] : mid * estimatedItemSize;
+			const currentOffset = getOffset(mid);
 
 			if (currentOffset === offset) return mid;
 
@@ -203,6 +166,10 @@
 
 		const isVertical = scrollDirection === 'vertical';
 		const containerSize = isVertical ? rootNode.clientHeight : rootNode.clientWidth;
+		for (const item of visibleItems) {
+			if (item.index < itemCount) getSize(item.index);
+		}
+		if (activeScrollTarget) getSize(Math.max(0, Math.min(itemCount - 1, activeScrollTarget.index)));
 		const newTotalSize = getOffset(itemCount) + paddingPx * 2;
 
 		let pendingScrollOffset = scrollOffset;
@@ -277,11 +244,12 @@
 			});
 		}
 
-		totalSize = newTotalSize;
-
 		const searchOffset = Math.max(0, scrollOffset - paddingPx);
 		const startIndex = Math.max(0, findNearestItem(searchOffset) - 5);
 		const endIndex = Math.min(itemCount - 1, findNearestItem(searchOffset + containerSize) + 5);
+
+		for (let i = startIndex; i <= endIndex; i++) getSize(i);
+		totalSize = getOffset(itemCount) + paddingPx * 2;
 
 		const newVisibleItems = [];
 		for (let i = startIndex; i <= endIndex; i++) {

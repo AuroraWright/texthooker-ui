@@ -90,5 +90,6 @@ export async function resetAllData(onlayoutChange?: () => void) {
 	settings.showConnectionErrors = defaultSettings.showConnectionErrors$;
 	settings.showConnectionIcon = defaultSettings.showConnectionIcon$;
 	settings.customCSS = defaultSettings.customCSS$;
+	dataState.prepareCharacterCounts();
 	onlayoutChange?.();
 }

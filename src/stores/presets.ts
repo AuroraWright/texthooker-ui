@@ -111,6 +111,7 @@ export function updateSettingsWithPreset(preset: SettingPreset, updateLastPreset
 	settings.showConnectionErrors = preset.settings.showConnectionErrors$ ?? defaultSettings.showConnectionErrors$;
 	settings.showConnectionIcon = preset.settings.showConnectionIcon$ ?? defaultSettings.showConnectionIcon$;
 	settings.customCSS = preset.settings.customCSS$ ?? defaultSettings.customCSS$;
+	dataState.prepareCharacterCounts();
 
 	if (updateLastPreset) {
 		settings.lastSettingPreset = preset.name;

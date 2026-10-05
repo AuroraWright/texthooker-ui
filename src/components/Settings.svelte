@@ -235,7 +235,7 @@
 						dataState.userNotes = value;
 						break;
 					case 'bannou-texthooker-lineData':
-						cacheLineCharacterCounts(value);
+						dataState.prepareCharacterCounts(value);
 						dataState.lines = value;
 						break;
 					case 'bannou-texthooker-actionHistory':
@@ -327,7 +327,12 @@
 		}
 
 		target.value = `${settings.characterMilestone}`;
+		dataState.prepareCharacterCounts();
 		onlayoutChange?.();
+	}
+
+	function handleStatisticsToggle(event: Event) {
+		if ((event.target as HTMLInputElement).checked) cacheLineCharacterCounts(dataState.lines);
 	}
 
 	function handlePreventLastDuplicateBlur(event) {
@@ -906,9 +911,9 @@
 		<span class="label-text">Show Timer</span>
 		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.showTimer} />
 		<span class="label-text">Show Speed</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.showSpeed} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.showSpeed} onchange={handleStatisticsToggle} />
 		<span class="label-text">Show Character Count</span>
-		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.showCharacterCount} />
+		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.showCharacterCount} onchange={handleStatisticsToggle} />
 		<span class="label-text">Show Line Count</span>
 		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.showLineCount} />
 		<span class="label-text">Blur Stats</span>

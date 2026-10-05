@@ -57,7 +57,7 @@
 	onDestroy(() => document.removeEventListener('dblclick', handleAfkResume));
 
 	let timerElm: HTMLElement = $state();
-	let characters = $derived(lineStatistics.characters);
+	let characters = $derived(settings.showCharacterCount || settings.showSpeed ? lineStatistics.characters : 0);
 	let speed = $derived(settings.timeValue ? Math.ceil((3600 * characters) / settings.timeValue) : 0);
 	let statstring = $derived(
 		settings.timeValue > -1 && (settings.showTimer || settings.showSpeed || settings.showCharacterCount || settings.showLineCount)
