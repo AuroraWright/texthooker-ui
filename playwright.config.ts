@@ -6,6 +6,7 @@ export default defineConfig({
 	use: {
 		baseURL: 'http://127.0.0.1:5174',
 		channel: 'chrome',
+		launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] },
 		trace: 'retain-on-failure',
 	},
 	webServer: {

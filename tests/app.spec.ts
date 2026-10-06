@@ -425,6 +425,289 @@ test('replacement sorting and toggles update existing rows and persist', async (
 	await expect(page.locator('[data-id="鳥"] input')).not.toBeChecked();
 });
 
+for (const vertical of [false, true]) {
+	test(`multiline scroll estimates stay stable in ${vertical ? 'vertical' : 'horizontal'} writing`, async ({ page }) => {
+		await page.addInitScript((vertical) => {
+			for (const [key, value] of Object.entries({
+				displayVertical: vertical ? '1' : '0',
+				preserveWhitespace: '1',
+				enableLineAnimation: '0',
+				characterMilestone: '0',
+			})) localStorage.setItem(`bannou-texthooker-${key}`, value);
+			localStorage.setItem('bannou-texthooker-lineData', JSON.stringify(
+				Array.from({ length: 600 }, (_, index) => ({
+					id: `multiline-${index}`,
+					text: ('長い文章が複数行に折り返されます。'.repeat(12) + '\n').repeat(4),
+				})),
+			));
+		}, vertical);
+		await page.goto('/');
+		await expect(lines(page).last()).toHaveAttribute('data-line-id', 'multiline-599');
+		await page.waitForTimeout(250);
+		const result = await page.getByRole('region', { name: 'Text history' }).evaluate(async (root, vertical) => {
+			const extent = () => vertical ? root.scrollWidth : root.scrollHeight;
+			const viewport = vertical ? root.clientWidth : root.clientHeight;
+			const initial = extent();
+			let maximumCorrection = 0;
+			for (let step = 1; step <= 12; step++) {
+				const target = (extent() - viewport) * step / 13;
+				root.scrollTo(vertical ? { left: -target } : { top: target });
+				await new Promise((resolve) => setTimeout(resolve, 75));
+				const actual = vertical ? Math.abs(root.scrollLeft) : root.scrollTop;
+				maximumCorrection = Math.max(maximumCorrection, Math.abs(target - actual));
+			}
+			return { extentChange: Math.abs(extent() / initial - 1), maximumCorrection };
+		}, vertical);
+		expect(result.extentChange).toBeLessThan(0.02);
+		expect(result.maximumCorrection).toBeLessThan(2);
+		expect(await lines(page).count()).toBeLessThan(50);
+	});
+}
+
+test.describe('native scrollbar dragging', () => {
+	for (const vertical of [false, true]) {
+		test(`history-limit removals during dragging keep text visible (vertical=${vertical})`, async ({ page }) => {
+			let socket: import('@playwright/test').WebSocketRoute;
+			await page.routeWebSocket('ws://localhost:6677', (route) => { socket = route; });
+			const text = '複数行になる日本語の文章。'.repeat(25);
+			await page.addInitScript(({ vertical, text }) => {
+				localStorage.setItem('bannou-texthooker-displayVertical', vertical ? '1' : '0');
+				localStorage.setItem('bannou-texthooker-enableLineAnimation', '0');
+				localStorage.setItem('bannou-texthooker-maxLines', '100');
+				localStorage.setItem('bannou-texthooker-lineData', JSON.stringify(
+					Array.from({ length: 100 }, (_, index) => ({ id: `limit-drag-${index}`, text })),
+				));
+			}, { vertical, text });
+			await page.goto('/');
+			await expect(page.getByTitle('Connected with ws://localhost:6677')).toBeVisible();
+			await expect(page.locator('[data-line-id="limit-drag-99"]')).toBeInViewport();
+			await page.addStyleTag({ content: `
+				[aria-label="Text history"]::-webkit-scrollbar { width: 16px; height: 16px; }
+				[aria-label="Text history"]::-webkit-scrollbar-thumb { background: gray; min-width: 24px; min-height: 24px; }
+			` });
+			await page.waitForTimeout(250);
+			const root = page.getByRole('region', { name: 'Text history' });
+			const initial = await root.evaluate((node, vertical) => {
+				const rect = node.getBoundingClientRect();
+				return { x: rect.x, y: rect.y, width: node.clientWidth, height: node.clientHeight,
+					extent: vertical ? node.scrollWidth : node.scrollHeight,
+					offset: vertical ? Math.abs(node.scrollLeft) : node.scrollTop };
+			}, vertical);
+			const viewport = vertical ? initial.width : initial.height;
+			const thumb = Math.max(24, viewport * viewport / initial.extent);
+			const axis = vertical ? initial.x : initial.y;
+			const progress = initial.offset / (initial.extent - viewport);
+			const start = axis + (vertical ? 1 - progress : progress) * (viewport - thumb) + thumb / 2;
+			const cross = vertical ? initial.y + initial.height + 8 : initial.x + initial.width + 8;
+			await page.mouse.move(vertical ? start : cross, vertical ? cross : start);
+			await page.mouse.down();
+			socket!.send(`${text}到着`);
+			await expect(root.getByText(`${text}到着`, { exact: true })).toHaveCount(1);
+			const visibleRows = () => root.evaluate((node, vertical) => {
+				const viewport = node.getBoundingClientRect();
+				return [...node.querySelectorAll('[data-line-id]')].some((row) => {
+					const rect = row.getBoundingClientRect();
+					return vertical ? rect.left < viewport.right && rect.right > viewport.left
+						: rect.top < viewport.bottom && rect.bottom > viewport.top;
+				});
+			}, vertical);
+			for (let step = 1; step <= 8; step++) {
+				const position = start + (axis + viewport / 2 - start) * step / 8;
+				await page.mouse.move(vertical ? position : cross, vertical ? cross : position);
+				await page.waitForTimeout(25);
+				expect(await visibleRows()).toBe(true);
+				expect(await root.evaluate((node, vertical) => vertical ? node.scrollWidth : node.scrollHeight, vertical))
+					.toBe(initial.extent);
+			}
+			await page.mouse.up();
+			await page.waitForTimeout(150);
+			expect(await visibleRows()).toBe(true);
+			await expect.poll(async () => (await storedLines(page))[0]?.id).toBe('limit-drag-1');
+			expect(await storedLines(page)).toHaveLength(100);
+		});
+
+		test(`keeps the thumb range fixed with changing multiline measurements (vertical=${vertical})`, async ({ page }) => {
+			await page.addInitScript((vertical) => {
+				localStorage.setItem('bannou-texthooker-displayVertical', vertical ? '1' : '0');
+				localStorage.setItem('bannou-texthooker-enableLineAnimation', '0');
+				// Deliberately make the representative sample underestimate the other rows.
+				const sampled = new Set(Array.from({ length: 32 }, (_, i) => Math.floor(i * 599 / 31)));
+				localStorage.setItem('bannou-texthooker-lineData', JSON.stringify(
+					Array.from({ length: 600 }, (_, index) => ({
+						id: `drag-${index}`,
+						text: sampled.has(index) ? '短い文章。' : ('複数行になる長い文章。'.repeat(25) + '\n').repeat(3),
+					})),
+				));
+			}, vertical);
+			await page.goto('/');
+			await expect(lines(page).last()).toHaveAttribute('data-line-id', 'drag-599');
+			await page.addStyleTag({ content: `
+				[aria-label="Text history"]::-webkit-scrollbar { width: 16px; height: 16px; }
+				[aria-label="Text history"]::-webkit-scrollbar-thumb { background: gray; min-width: 24px; min-height: 24px; }
+			` });
+			await page.waitForTimeout(250);
+			const root = page.getByRole('region', { name: 'Text history' });
+			const initial = await root.evaluate((node, vertical) => {
+				const rect = node.getBoundingClientRect();
+				return { x: rect.x, y: rect.y, width: node.clientWidth, height: node.clientHeight,
+					extent: vertical ? node.scrollWidth : node.scrollHeight,
+					offset: vertical ? Math.abs(node.scrollLeft) : node.scrollTop };
+			}, vertical);
+			const viewport = vertical ? initial.width : initial.height;
+			const thumb = Math.max(24, viewport * viewport / initial.extent);
+			const axis = vertical ? initial.x : initial.y;
+			const progress = initial.offset / (initial.extent - viewport);
+			const start = axis + (vertical ? 1 - progress : progress) * (viewport - thumb) + thumb / 2;
+			const cross = vertical ? initial.y + initial.height + 8 : initial.x + initial.width + 8;
+			await page.mouse.move(vertical ? start : cross, vertical ? cross : start);
+			await page.mouse.down();
+			const end = axis + (vertical ? viewport - thumb / 2 - 20 : thumb / 2 + 20);
+			for (let step = 1; step <= 12; step++) {
+				const position = start + (end - start) * step / 12;
+				await page.mouse.move(vertical ? position : cross, vertical ? cross : position);
+				await page.waitForTimeout(75);
+				const state = await root.evaluate((node, vertical) => {
+					const viewport = node.getBoundingClientRect();
+					return { extent: vertical ? node.scrollWidth : node.scrollHeight,
+						visible: [...node.querySelectorAll('[data-line-id]')].some((row) => {
+							const rect = row.getBoundingClientRect();
+							return vertical ? rect.left < viewport.right && rect.right > viewport.left
+								: rect.top < viewport.bottom && rect.bottom > viewport.top;
+						}) };
+				}, vertical);
+				expect(state.extent).toBe(initial.extent);
+				expect(state.visible).toBe(true);
+			}
+			const offset = await root.evaluate((node, vertical) => vertical ? Math.abs(node.scrollLeft) : node.scrollTop, vertical);
+			expect(Math.abs(offset - initial.offset)).toBeGreaterThan(initial.extent / 2);
+			const anchor = await root.evaluate((node, vertical) => {
+				const viewport = node.getBoundingClientRect();
+				const center = vertical ? (viewport.left + viewport.right) / 2 : (viewport.top + viewport.bottom) / 2;
+				for (const row of node.querySelectorAll<HTMLElement>('[data-line-id]')) {
+					const rect = row.getBoundingClientRect();
+					if (vertical ? rect.left <= center && rect.right >= center : rect.top <= center && rect.bottom >= center)
+						return { id: row.dataset.lineId, position: vertical ? rect.left : rect.top };
+				}
+			}, vertical);
+			expect(anchor).toBeDefined();
+			await page.mouse.up();
+			await expect.poll(() => root.evaluate((node, vertical) => vertical ? node.scrollWidth : node.scrollHeight, vertical))
+				.not.toBe(initial.extent);
+			await expect.poll(async () => {
+				const rect = await page.locator(`[data-line-id="${anchor.id}"]`).boundingBox();
+				return rect ? Math.abs((vertical ? rect.x : rect.y) - anchor.position) : Infinity;
+			}).toBeLessThan(2);
+		});
+	}
+});
+
+for (const vertical of [false, true]) {
+	test(`header is flush with the scroller and leaves the native scrollbar usable (vertical=${vertical})`, async ({ page }) => {
+		await page.addInitScript((vertical) => {
+			localStorage.setItem('bannou-texthooker-displayVertical', vertical ? '1' : '0');
+			localStorage.setItem('bannou-texthooker-enableLineAnimation', '0');
+			localStorage.setItem('bannou-texthooker-lineData', JSON.stringify(
+				Array.from({ length: 300 }, (_, index) => ({ id: `header-${index}`, text: '複数行になる文章。'.repeat(30) })),
+			));
+		}, vertical);
+		await page.goto('/');
+		await expect(lines(page).last()).toHaveAttribute('data-line-id', 'header-299');
+		await page.addStyleTag({ content: `
+			[aria-label="Text history"]::-webkit-scrollbar { width: 16px; height: 16px; }
+			[aria-label="Text history"]::-webkit-scrollbar-thumb { background: gray; min-width: 24px; min-height: 24px; }
+		` });
+		const root = page.getByRole('region', { name: 'Text history' });
+		const header = page.locator('header');
+		await root.evaluate((node, vertical) => node.scrollTo(vertical
+			? { left: -(node.scrollWidth - node.clientWidth) / 2 }
+			: { top: (node.scrollHeight - node.clientHeight) / 2 }), vertical);
+		await page.waitForTimeout(200);
+		const geometry = await root.evaluate((node, vertical) => {
+			const rect = node.getBoundingClientRect();
+			return { x: rect.x, y: rect.y, width: node.clientWidth, height: node.clientHeight,
+				extent: vertical ? node.scrollWidth : node.scrollHeight,
+				offset: vertical ? Math.abs(node.scrollLeft) : node.scrollTop };
+		}, vertical);
+		const initial = await header.boundingBox();
+		expect(initial.y).toBe(0);
+		expect(Math.abs(initial.x + initial.width - geometry.x - geometry.width)).toBeLessThan(1);
+		const viewport = vertical ? geometry.width : geometry.height;
+		const thumb = Math.max(24, viewport * viewport / geometry.extent);
+		const progress = geometry.offset / (geometry.extent - viewport);
+		const center = (vertical ? geometry.x : geometry.y)
+			+ (vertical ? 1 - progress : progress) * (viewport - thumb) + thumb / 2;
+		const x = vertical ? center : geometry.x + geometry.width + 8;
+		const y = vertical ? geometry.y + geometry.height + 8 : center;
+		expect(await root.evaluate((node, { x, y }) => document.elementFromPoint(x, y) === node, { x, y })).toBe(true);
+		await page.mouse.move(x, y);
+		await page.mouse.down();
+		await page.mouse.move(vertical ? x + viewport / 5 : x, vertical ? y : y - viewport / 5, { steps: 10 });
+		await page.waitForTimeout(100);
+		await page.mouse.up();
+		const after = await header.boundingBox();
+		expect(Math.abs(after.x - initial.x)).toBeLessThan(1);
+		expect(after.y).toBe(0);
+		const offset = await root.evaluate((node, vertical) => vertical ? Math.abs(node.scrollLeft) : node.scrollTop, vertical);
+		expect(Math.abs(offset - geometry.offset)).toBeGreaterThan(geometry.extent / 10);
+		await openSettings(page);
+		await expect(header.getByText('Font Size', { exact: true })).toBeVisible();
+		await closeSettings(page);
+		await page.setViewportSize({ width: 390, height: 720 });
+		await expect.poll(async () => (await header.boundingBox()).x).toBeGreaterThanOrEqual(0);
+		await openSettings(page);
+		await closeSettings(page);
+	});
+}
+
+for (const vertical of [false, true]) {
+	for (const reversed of [false, true]) {
+		test(`repeated multiline tail deletions preserve the viewing position (vertical=${vertical}, reversed=${reversed})`, async ({ page }) => {
+			await page.addInitScript(({ vertical, reversed }) => {
+				localStorage.setItem('bannou-texthooker-displayVertical', vertical ? '1' : '0');
+				localStorage.setItem('bannou-texthooker-reverseLineOrder', reversed ? '1' : '0');
+				localStorage.setItem('bannou-texthooker-enableLineAnimation', '0');
+				localStorage.setItem('bannou-texthooker-lineData', JSON.stringify(
+					Array.from({ length: 600 }, (_, index) => ({
+						id: `delete-${index}`,
+						text: ('長さの異なる文章が複数行に折り返されます。'.repeat(1 + index % 19) + '\n').repeat(1 + index % 3),
+					})),
+				));
+			}, { vertical, reversed });
+			await page.goto('/');
+			const root = page.getByRole('region', { name: 'Text history' });
+			await expect(page.locator('[data-line-id="delete-599"]')).toBeInViewport();
+			for (let index = 598; index >= 587; index--) {
+				await toolbar(page, 'Delete last Line');
+				await expect(page.locator(`[data-line-id="delete-${index}"]`)).toBeInViewport();
+				await expect.poll(() => root.evaluate((node, { vertical, reversed }) => {
+					const offset = vertical ? Math.abs(node.scrollLeft) : node.scrollTop;
+					const range = vertical ? node.scrollWidth - node.clientWidth : node.scrollHeight - node.clientHeight;
+					return reversed ? offset : Math.abs(range - offset);
+				}, { vertical, reversed })).toBeLessThan(2);
+				await page.waitForTimeout(120);
+			}
+			await root.evaluate((node, vertical) => node.scrollTo(vertical
+				? { left: -(node.scrollWidth - node.clientWidth) * 0.45 }
+				: { top: (node.scrollHeight - node.clientHeight) * 0.45 }), vertical);
+			await page.waitForTimeout(200);
+			const anchor = await root.evaluate((node, vertical) => {
+				const viewport = node.getBoundingClientRect();
+				for (const row of node.querySelectorAll<HTMLElement>('[data-line-id]')) {
+					const rect = row.getBoundingClientRect();
+					if (vertical ? rect.left < viewport.right && rect.right > viewport.left : rect.top < viewport.bottom && rect.bottom > viewport.top)
+						return { id: row.dataset.lineId, position: vertical ? rect.right : rect.top };
+				}
+			}, vertical);
+			expect(anchor).toBeDefined();
+			await toolbar(page, 'Delete last Line');
+			await page.waitForTimeout(200);
+			const rect = await page.locator(`[data-line-id="${anchor.id}"]`).boundingBox();
+			expect(rect).not.toBeNull();
+			expect(Math.abs((vertical ? rect.x + rect.width : rect.y) - anchor.position)).toBeLessThan(2);
+		});
+	}
+}
+
 test('large stored history remains virtualized and searchable in both writing modes', async ({ page }) => {
 	await page.addInitScript(() => {
 		if (localStorage.getItem('seeded-history')) return;

@@ -15,6 +15,7 @@
 		scrollDirection?: 'vertical' | 'horizontal';
 		padding?: string;
 		item?: import('svelte').Snippet<[{ index: number; style: string }]>;
+		overlay?: import('svelte').Snippet;
 	}
 
 	let {
@@ -27,15 +28,20 @@
 		scrollDirection = 'vertical',
 		padding = '0',
 		item,
+		overlay,
 	}: Props = $props();
 
 	let rootNode: HTMLElement = $state();
 	let resizeObserver: ResizeObserver;
 	let updateStatePending = false;
 	let scrollOffset = 0;
+	let userScrollUntil = 0;
+	let scrollbarDrag: { extent: number; offset: number } | undefined;
+	let scrollAnchor: { index: number; offset: number } | undefined;
 	let visibleItems: { index: number; style: string }[] = $state([]);
 	let totalSize = $state(0);
 	let paddingPx = $state(0);
+	let viewportWidth = $state(0);
 	let lastFirstVisibleIndex = 0;
 	let lastFirstVisibleOffset = 0;
 	let lastLastVisibleIndex = 0;
@@ -62,6 +68,7 @@
 
 	function removeIndices(indices: number[]) {
 		if (!indices || indices.length === 0) return;
+		scrollAnchor = undefined;
 
 		const sortedIndices = [...indices].sort((a, b) => b - a);
 		measurements.remove(sortedIndices);
@@ -70,11 +77,12 @@
 			if (index < lastLastVisibleIndex) lastLastVisibleIndex--;
 		}
 		_prevItemCount -= indices.length;
-		updateState();
+		scheduleUpdateState();
 	}
 
 	function insertIndices(indices: number[]) {
 		if (!indices || indices.length === 0) return;
+		scrollAnchor = undefined;
 
 		const sortedIndices = [...indices].sort((a, b) => a - b);
 		measurements.insert(sortedIndices);
@@ -83,11 +91,12 @@
 			if (index <= lastLastVisibleIndex) lastLastVisibleIndex++;
 		}
 		_prevItemCount += indices.length;
-		updateState();
+		scheduleUpdateState();
 	}
 
 	function shiftIndices(shiftAmount: number) {
 		if (!shiftAmount || shiftAmount <= 0) return;
+		scrollAnchor = undefined;
 
 		measurements.shift(shiftAmount);
 		_prevItemCount += shiftAmount;
@@ -97,6 +106,7 @@
 	}
 
 	function clearCache() {
+		scrollAnchor = undefined;
 		measurements.clear();
 		lastTotalSize = 0;
 		updateState();
@@ -107,7 +117,8 @@
 		behavior: ScrollBehavior = 'auto',
 		alignment: 'start' | 'center' | 'end' | 'auto' = 'auto',
 	) {
-		if (index === undefined || !rootNode || itemCount === 0) return;
+		if (index === undefined || !rootNode || itemCount === 0 || scrollbarDrag) return;
+		scrollAnchor = undefined;
 		activeScrollTarget = { index, alignment, behavior };
 		scheduleUpdateState();
 	}
@@ -156,8 +167,9 @@
 		return Math.max(0, low - 1);
 	}
 
-	function updateState() {
-		if (!rootNode || itemCount === 0) {
+	function updateState(forceScroll = false) {
+		if (rootNode) viewportWidth = rootNode.clientWidth;
+		if (!rootNode || itemCount === 0 || !Number.isFinite(estimatedItemSize) || estimatedItemSize <= 0) {
 			visibleItems = [];
 			totalSize = 0;
 			lastTotalSize = 0;
@@ -166,11 +178,15 @@
 
 		const isVertical = scrollDirection === 'vertical';
 		const containerSize = isVertical ? rootNode.clientHeight : rootNode.clientWidth;
+		const previousScrollOffset = scrollOffset;
 		for (const item of visibleItems) {
 			if (item.index < itemCount) getSize(item.index);
 		}
 		if (activeScrollTarget) getSize(Math.max(0, Math.min(itemCount - 1, activeScrollTarget.index)));
 		const newTotalSize = getOffset(itemCount) + paddingPx * 2;
+		if (scrollbarDrag) {
+			scrollOffset = dragScrollOffset(newTotalSize, containerSize);
+		}
 
 		let pendingScrollOffset = scrollOffset;
 		let pendingBehavior: ScrollBehavior = 'auto';
@@ -215,7 +231,9 @@
 				clearTimeout(scrollTargetTimeout);
 				scrollTargetTimeout = window.setTimeout(resetScrollTarget, 100);
 			}
-		} else if (lastTotalSize > 0 && newTotalSize !== lastTotalSize) {
+		} else if (scrollAnchor && !scrollbarDrag) {
+			pendingScrollOffset = getOffset(scrollAnchor.index) + scrollAnchor.offset;
+		} else if (!scrollbarDrag && lastTotalSize > 0 && newTotalSize !== lastTotalSize && performance.now() >= userScrollUntil) {
 			const safeFirstIndex = Math.max(0, Math.min(itemCount - 1, lastFirstVisibleIndex));
 			const newFirstVisibleOffset = getOffset(safeFirstIndex);
 			const diffTop = newFirstVisibleOffset - lastFirstVisibleOffset;
@@ -231,29 +249,30 @@
 			pendingScrollOffset = Math.max(0, Math.min(maxScroll, pendingScrollOffset));
 		}
 
-		if (pendingScrollOffset !== scrollOffset) {
-			scrollOffset = pendingScrollOffset;
-			tick().then(() => {
-				if (rootNode) {
-					if (scrollDirection === 'vertical') {
-						rootNode.scrollTo({ top: scrollOffset, left: 0, behavior: pendingBehavior });
-					} else {
-						rootNode.scrollTo({ left: -scrollOffset, top: 0, behavior: pendingBehavior });
-					}
-				}
-			});
-		}
+		scrollOffset = pendingScrollOffset;
 
 		const searchOffset = Math.max(0, scrollOffset - paddingPx);
 		const startIndex = Math.max(0, findNearestItem(searchOffset) - 5);
 		const endIndex = Math.min(itemCount - 1, findNearestItem(searchOffset + containerSize) + 5);
 
 		for (let i = startIndex; i <= endIndex; i++) getSize(i);
-		totalSize = getOffset(itemCount) + paddingPx * 2;
+		const measuredTotalSize = getOffset(itemCount) + paddingPx * 2;
+		totalSize = scrollbarDrag?.extent ?? measuredTotalSize;
+		if (scrollbarDrag) scrollOffset = dragScrollOffset(measuredTotalSize, containerSize);
+		else if (scrollAnchor) scrollOffset = getOffset(scrollAnchor.index) + scrollAnchor.offset;
+		const dragTranslation = scrollbarDrag ? scrollbarDrag.offset - scrollOffset : 0;
+		if (!scrollbarDrag && (forceScroll || scrollOffset !== previousScrollOffset)) {
+			tick().then(() => {
+				if (!rootNode) return;
+				rootNode.scrollTo(scrollDirection === 'vertical'
+					? { top: scrollOffset, left: 0, behavior: pendingBehavior }
+					: { left: -scrollOffset, top: 0, behavior: pendingBehavior });
+			});
+		}
 
 		const newVisibleItems = [];
 		for (let i = startIndex; i <= endIndex; i++) {
-			const offset = getOffset(i) + paddingPx;
+			const offset = getOffset(i) + paddingPx + dragTranslation;
 			newVisibleItems.push({
 				index: i,
 				style: `position: absolute; ${isVertical ? 'top' : 'right'}: ${offset}px; ${isVertical ? 'width: 100%' : 'height: 100%'};`,
@@ -265,7 +284,43 @@
 		lastFirstVisibleOffset = getOffset(lastFirstVisibleIndex);
 		lastLastVisibleIndex = findNearestItem(scrollOffset + containerSize);
 		lastLastVisibleOffset = getOffset(lastLastVisibleIndex);
-		lastTotalSize = totalSize;
+		lastTotalSize = measuredTotalSize;
+	}
+
+	function dragScrollOffset(extent: number, viewport: number) {
+		const dragRange = Math.max(0, scrollbarDrag.extent - viewport);
+		const progress = dragRange ? Math.min(1, Math.max(0, scrollbarDrag.offset / dragRange)) : 0;
+		return progress * Math.max(0, extent - viewport);
+	}
+
+	function handlePointerDown(event: PointerEvent) {
+		resetScrollTarget();
+		scrollAnchor = undefined;
+		// Native scrollbar input targets the scroller itself, rather than its content.
+		if (event.button !== 0 || event.target !== rootNode) return;
+		const vertical = scrollDirection === 'vertical';
+		scrollbarDrag = {
+			extent: vertical ? rootNode.scrollHeight : rootNode.scrollWidth,
+			offset: vertical ? rootNode.scrollTop : Math.abs(rootNode.scrollLeft),
+		};
+	}
+
+	function finishScrollbarDrag() {
+		if (!scrollbarDrag) return;
+		if (rootNode) {
+			const vertical = scrollDirection === 'vertical';
+			scrollbarDrag.offset = vertical ? rootNode.scrollTop : Math.abs(rootNode.scrollLeft);
+			scrollOffset = dragScrollOffset(
+				getOffset(itemCount) + paddingPx * 2,
+				vertical ? rootNode.clientHeight : rootNode.clientWidth,
+			);
+		}
+		const index = findNearestItem(scrollOffset);
+		scrollAnchor = { index, offset: scrollOffset - getOffset(index) };
+		scrollbarDrag = undefined;
+		userScrollUntil = 0;
+		// The physical offset still uses the frozen drag range, even if the logical offset is unchanged.
+		updateState(true);
 	}
 
 	function handleScroll() {
@@ -276,7 +331,16 @@
 			newScrollOffset = Math.abs(newScrollOffset);
 		}
 
-		if (newScrollOffset !== scrollOffset) {
+		if (scrollbarDrag) {
+			scrollbarDrag.offset = newScrollOffset;
+			updateState();
+		} else if (scrollAnchor && Math.abs(newScrollOffset - scrollOffset) < 1) {
+			// Browsers round assigned scroll offsets; that is not a new user scroll.
+			scrollOffset = newScrollOffset;
+		} else if (newScrollOffset !== scrollOffset) {
+			scrollAnchor = undefined;
+			// Measurements must not pull the scrollbar back while the user is moving it.
+			if (!activeScrollTarget) userScrollUntil = performance.now() + 150;
 			scrollOffset = newScrollOffset;
 			updateState();
 		}
@@ -304,9 +368,15 @@
 			}
 		}
 
-		if (directionChanged || sizeChanged || hasDecreased) {
+		if (directionChanged || hasDecreased) {
 			clearCache();
 			return;
+		}
+
+		// A new estimate affects unknown rows, not the measurements already collected.
+		if (sizeChanged && lastTotalSize > 0 && !activeScrollTarget && !scrollbarDrag) {
+			const index = Math.max(0, Math.min(newCount - 1, lastFirstVisibleIndex));
+			scrollAnchor = { index, offset: scrollOffset - lastFirstVisibleOffset };
 		}
 
 		updateState();
@@ -335,6 +405,9 @@
 
 	onMount(() => {
 		updateState();
+		window.addEventListener('pointerup', finishScrollbarDrag);
+		window.addEventListener('pointercancel', finishScrollbarDrag);
+		window.addEventListener('blur', finishScrollbarDrag);
 
 		if (typeof ResizeObserver !== 'undefined' && rootNode) {
 			resizeObserver = new ResizeObserver(() => {
@@ -344,6 +417,9 @@
 		}
 
 		return () => {
+			window.removeEventListener('pointerup', finishScrollbarDrag);
+			window.removeEventListener('pointercancel', finishScrollbarDrag);
+			window.removeEventListener('blur', finishScrollbarDrag);
 			clearTimeout(scrollTargetTimeout);
 			if (resizeObserver) {
 				resizeObserver.disconnect();
@@ -376,13 +452,21 @@
 	bind:this={rootNode}
 	onscroll={handleScroll}
 	onwheel={resetScrollTarget}
-	onpointerdown={resetScrollTarget}
-	style="position: relative; overflow: auto; width: {width}; height: {height}; will-change: transform; -webkit-overflow-scrolling: touch; scrollbar-gutter: stable;"
+	onpointerdown={handlePointerDown}
+	style="position: relative; overflow: auto; overflow-anchor: none; width: {width}; height: {height}; will-change: transform; -webkit-overflow-scrolling: touch; scrollbar-gutter: stable;"
 >
+	{#if overlay}
+		<div
+			class="font-sans text-base break-normal"
+			style="position: sticky; top: 0; right: 0; width: 0; height: 0; margin-left: auto; z-index: 10; pointer-events: none; writing-mode: horizontal-tb; --overlay-width: {viewportWidth}px;"
+		>
+			{@render overlay()}
+		</div>
+	{/if}
 	<div
 		style="{scrollDirection === 'vertical'
 			? 'min-height'
-			: 'min-width'}: {totalSize}px; width: 100%; height: 100%; position: relative;"
+			: 'min-width'}: {totalSize}px; width: 100%; height: 100%; position: relative; overflow: clip;"
 	>
 		{#each visibleItems as visibleItem (visibleItem.index)}
 			{@render item?.({ index: visibleItem.index, style: visibleItem.style })}

@@ -276,6 +276,8 @@
 		const ro = new ResizeObserver(() => measure());
 
 		ro.observe(node);
+		// Native scrollbar dragging can delay ResizeObserver delivery for newly mounted rows.
+		tick().then(() => measure());
 
 		return {
 			update(newParams: { line: LineItem; virtual: number }) {
@@ -846,7 +848,36 @@
 	let listScrollBehavior: ScrollBehavior = $derived(settings.enableLineAnimation ? 'smooth' : 'auto');
 	let pipAvailable = $derived('documentPictureInPicture' in window && !!pipContainer);
 	let pipLines = $derived(pipAvailable && dataState.lines ? dataState.lines.slice(-settings.maxPipLines) : []);
+	// Appends keep the raw array identity, so the representative sample stays stable during ingestion.
+	let estimationLines = $derived(dataState.lines);
+	let estimationSamples = $derived.by(() => {
+		const count = Math.min(32, estimationLines.length);
+		if (!count) return ['トランスジェンダーの権利'];
+		return Array.from({ length: count }, (_, index) =>
+			estimationLines[Math.floor(index * (estimationLines.length - 1) / Math.max(1, count - 1))].text,
+		);
+	});
 	let estimatedItemSize = $derived(settings.displayVertical ? estimatedLineWidth : estimatedLineHeight);
+
+	function measureEstimationSamples(node: HTMLElement, _sampleCount: number) {
+		function measure() {
+			// Read dimensions and sample count from the same rendered layout.
+			const count = Math.max(1, node.childElementCount);
+			estimatedLineHeight = node.offsetHeight / count;
+			estimatedLineWidth = node.offsetWidth / count;
+		}
+		const observer = new ResizeObserver(measure);
+		observer.observe(node);
+		tick().then(measure);
+		return {
+			update() {
+				tick().then(measure);
+			},
+			destroy() {
+				observer.disconnect();
+			},
+		};
+	}
 
 	$effect(() => {
 		if (pipWindow) {
@@ -995,138 +1026,153 @@
 	</div>
 {/if}
 
-<header
-	class="fixed top-0 right-3 sm:right-4 flex justify-end items-center p-2 bg-base-100 z-10"
-	bind:this={settingsContainer}
->
-	<Stats onafkBlur={onAfkBlur} />
-	{#if settings.websocketUrl}
-		<SocketConnector />
-	{/if}
-	{#if settings.secondaryWebsocketUrl}
-		<SocketConnector isPrimary={false} />
-	{/if}
-	{#if appState.isPaused}
+{#snippet toolbar()}
+	<header
+		class="absolute top-0 right-0 w-max flex justify-end items-center p-2 bg-base-100 z-10 pointer-events-auto"
+		style:max-width="var(--overlay-width)"
+		bind:this={settingsContainer}
+	>
+		<Stats onafkBlur={onAfkBlur} />
+		{#if settings.websocketUrl}
+			<SocketConnector />
+		{/if}
+		{#if settings.secondaryWebsocketUrl}
+			<SocketConnector isPrimary={false} />
+		{/if}
+		{#if appState.isPaused}
+			<div
+				role="button"
+				title="Continue"
+				class="mr-1 animate-[pulse_1.25s_cubic-bezier(0.4,0,0.6,1)_infinite] hover:text-primary sm:mr-2"
+			>
+				<Icon path={mdiPlay} width={iconSize} height={iconSize} onclick={() => (setPaused(false))} />
+			</div>
+		{:else}
+			<div role="button" title="Pause" class="mr-1 hover:text-primary sm:mr-2">
+				<Icon path={mdiPause} width={iconSize} height={iconSize} onclick={() => (setPaused(true))} />
+			</div>
+		{/if}
 		<div
 			role="button"
-			title="Continue"
-			class="mr-1 animate-[pulse_1.25s_cubic-bezier(0.4,0,0.6,1)_infinite] hover:text-primary sm:mr-2"
-		>
-			<Icon path={mdiPlay} width={iconSize} height={iconSize} onclick={() => (setPaused(false))} />
-		</div>
-	{:else}
-		<div role="button" title="Pause" class="mr-1 hover:text-primary sm:mr-2">
-			<Icon path={mdiPause} width={iconSize} height={iconSize} onclick={() => (setPaused(true))} />
-		</div>
-	{/if}
-	<div
-		role="button"
-		title="Delete last Line"
-		class="mr-1 hover:text-primary sm:mr-2"
-		class:opacity-50={!dataState.lines.length}
-		class:cursor-not-allowed={!dataState.lines.length}
-		class:hover:text-primary={dataState.lines.length}
-	>
-		<Icon path={mdiDeleteForever} width={iconSize} height={iconSize} onclick={removeLastLine} />
-	</div>
-	<div
-		role="button"
-		title="Undo last Action"
-		class="mr-1 hover:text-primary sm:mr-2"
-		class:opacity-50={!dataState.actionHistory.length}
-		class:cursor-not-allowed={!dataState.actionHistory.length}
-		class:hover:text-primary={dataState.actionHistory.length}
-	>
-		<Icon path={mdiArrowULeftTop} width={iconSize} height={iconSize} onclick={undoLastAction} />
-	</div>
-	{#if selectedLineIds.length}
-		<div role="button" title="Remove selected Lines" class="mr-1 hover:text-primary sm:mr-2">
-			<Icon path={mdiDelete} width={iconSize} height={iconSize} onclick={removeLines} />
-		</div>
-		<div role="button" title="Deselect Lines" class="mr-1 hover:text-primary sm:mr-2">
-			<Icon path={mdiCancel} width={iconSize} height={iconSize} onclick={deselectLines} />
-		</div>
-	{/if}
-	<div role="button" title="Open Notes" class="mr-1 hover:text-primary sm:mr-2">
-		<Icon path={mdiNoteEdit} width={iconSize} height={iconSize} onclick={() => (settings.notesOpen = true)} />
-	</div>
-	{#if pipAvailable}
-		<div
-			role="button"
+			title="Delete last Line"
 			class="mr-1 hover:text-primary sm:mr-2"
-			title={pipWindow ? 'Close Floating Window' : 'Open Floating Window'}
+			class:opacity-50={!dataState.lines.length}
+			class:cursor-not-allowed={!dataState.lines.length}
+			class:hover:text-primary={dataState.lines.length}
 		>
-			<Icon
-				width={iconSize}
-				height={iconSize}
-				path={pipWindow ? mdiWindowMaximize : mdiWindowRestore}
-				onclick={handlePipAction}
-			/>
+			<Icon path={mdiDeleteForever} width={iconSize} height={iconSize} onclick={removeLastLine} />
 		</div>
-	{/if}
-	<Icon
-		class="cursor-pointer mr-1 hover:text-primary md:mr-2"
-		path={mdiCog}
-		label="Settings"
-		width={iconSize}
-		height={iconSize}
-		bind:element={settingsElement}
-		onclick={() => (settingsOpen = !settingsOpen)}
-	/>
-	<Settings
-		{settingsElement}
-		{pipAvailable}
-		bind:settingsOpen
-		bind:selectedLineIds
-		onreset={handleReset}
-		onapplyReplacements={() => updateLineData(!!dataState.enabledReplacements.length)}
-		onlayoutChange={handleLayoutInvalidation}
-		onmaxLinesChange={() => (dataState.lines = applyMaxLinesAndGetRemainingLineData())}
-		onlinesRemoved={(ids, indices) => {
-			ids.forEach((id) => lineSizes.delete(id));
-			const previousCount = dataState.lines.length + indices.length;
-			virtualListController.removeIndices(indices.map((index) => mapIndex(index, previousCount)));
-			tick().then(() => executeUpdateScroll(true));
-		}}
-		onlinesChanged={(ids, indices) => {
-			ids.forEach((id) => lineSizes.delete(id));
-			virtualListController.invalidateIndices(indices.map((index) => mapIndex(index)));
-			tick().then(() => {
-				remeasureMountedLines();
-				executeUpdateScroll(true);
-			});
-		}}
-		ondataResetOrImported={handleDataResetOrImported}
-	/>
-	<Presets isQuickSwitch={true} onlayoutChange={handleLayoutInvalidation} />
-</header>
+		<div
+			role="button"
+			title="Undo last Action"
+			class="mr-1 hover:text-primary sm:mr-2"
+			class:opacity-50={!dataState.actionHistory.length}
+			class:cursor-not-allowed={!dataState.actionHistory.length}
+			class:hover:text-primary={dataState.actionHistory.length}
+		>
+			<Icon path={mdiArrowULeftTop} width={iconSize} height={iconSize} onclick={undoLastAction} />
+		</div>
+		{#if selectedLineIds.length}
+			<div role="button" title="Remove selected Lines" class="mr-1 hover:text-primary sm:mr-2">
+				<Icon path={mdiDelete} width={iconSize} height={iconSize} onclick={removeLines} />
+			</div>
+			<div role="button" title="Deselect Lines" class="mr-1 hover:text-primary sm:mr-2">
+				<Icon path={mdiCancel} width={iconSize} height={iconSize} onclick={deselectLines} />
+			</div>
+		{/if}
+		<div role="button" title="Open Notes" class="mr-1 hover:text-primary sm:mr-2">
+			<Icon path={mdiNoteEdit} width={iconSize} height={iconSize} onclick={() => (settings.notesOpen = true)} />
+		</div>
+		{#if pipAvailable}
+			<div
+				role="button"
+				class="mr-1 hover:text-primary sm:mr-2"
+				title={pipWindow ? 'Close Floating Window' : 'Open Floating Window'}
+			>
+				<Icon
+					width={iconSize}
+					height={iconSize}
+					path={pipWindow ? mdiWindowMaximize : mdiWindowRestore}
+					onclick={handlePipAction}
+				/>
+			</div>
+		{/if}
+		<Icon
+			class="cursor-pointer mr-1 hover:text-primary md:mr-2"
+			path={mdiCog}
+			label="Settings"
+			width={iconSize}
+			height={iconSize}
+			bind:element={settingsElement}
+			onclick={() => (settingsOpen = !settingsOpen)}
+		/>
+		<Settings
+			{settingsElement}
+			{pipAvailable}
+			bind:settingsOpen
+			bind:selectedLineIds
+			onreset={handleReset}
+			onapplyReplacements={() => updateLineData(!!dataState.enabledReplacements.length)}
+			onlayoutChange={handleLayoutInvalidation}
+			onmaxLinesChange={() => (dataState.lines = applyMaxLinesAndGetRemainingLineData())}
+			onlinesRemoved={(ids, indices) => {
+				ids.forEach((id) => lineSizes.delete(id));
+				const previousCount = dataState.lines.length + indices.length;
+				virtualListController.removeIndices(indices.map((index) => mapIndex(index, previousCount)));
+				tick().then(() => executeUpdateScroll(true));
+			}}
+			onlinesChanged={(ids, indices) => {
+				ids.forEach((id) => lineSizes.delete(id));
+				virtualListController.invalidateIndices(indices.map((index) => mapIndex(index)));
+				tick().then(() => {
+					remeasureMountedLines();
+					executeUpdateScroll(true);
+				});
+			}}
+			ondataResetOrImported={handleDataResetOrImported}
+		/>
+		<Presets isQuickSwitch={true} onlayoutChange={handleLayoutInvalidation} />
+	</header>
+{/snippet}
 <main
 	class="flex flex-col flex-1 break-all w-full h-full overflow-hidden relative"
-	class:pt-8={settings.displayVertical}
-	class:opacity-50={settings.notesOpen}
 	style:font-size={`${settings.fontSize}px`}
 	style:font-family={settings.onlineFont !== OnlineFont.OFF ? settings.onlineFont : 'undefined'}
 	style:writing-mode={settings.displayVertical ? 'vertical-rl' : 'horizontal-tb'}
 >
 	<div
 		aria-hidden="true"
-		class="absolute invisible pointer-events-none opacity-0 -z-50 flex"
-		class:flex-col={!settings.displayVertical}
-		bind:offsetHeight={estimatedLineHeight}
-		bind:offsetWidth={estimatedLineWidth}
+		class="absolute inset-0 invisible pointer-events-none opacity-0 -z-50 overflow-auto"
+		style="scrollbar-gutter: stable;"
+		style:width={listWidth ? `${listWidth}px` : '100%'}
+		style:height={listHeight ? `${listHeight}px` : '100%'}
 	>
-		<p
-			class="my-2 border-2 border-transparent"
-			class:px-2={!settings.displayVertical}
-			class:py-2={settings.displayVertical}
-			class:show-bullet={settings.showLinePoints}
-			style:padding-top={!settings.displayVertical ? `${settings.linePadding}rem` : undefined}
-			style:padding-bottom={!settings.displayVertical ? `${settings.linePadding}rem` : undefined}
-			style:padding-left={settings.displayVertical ? `${settings.linePadding}rem` : undefined}
-			style:padding-right={settings.displayVertical ? `${settings.linePadding}rem` : undefined}
+		<div
+			class:w-full={!settings.displayVertical}
+			class:h-full={settings.displayVertical}
+			use:measureEstimationSamples={estimationSamples.length}
 		>
-			トランスジェンダーの権利
-		</p>
+			{#each estimationSamples as text}
+				<div
+					class="flex flex-col"
+					class:px-4={!settings.displayVertical}
+					class:py-4={settings.displayVertical}
+					class:pt-12={settings.displayVertical}
+					class:h-full={settings.displayVertical}
+				>
+					<p
+						class="my-2 border-2 border-transparent"
+						class:px-2={!settings.displayVertical}
+						class:py-2={settings.displayVertical}
+						class:whitespace-pre-wrap={settings.preserveWhitespace}
+						style:padding-top={!settings.displayVertical ? `${settings.linePadding}rem` : undefined}
+						style:padding-bottom={!settings.displayVertical ? `${settings.linePadding}rem` : undefined}
+						style:padding-left={settings.displayVertical ? `${settings.linePadding}rem` : undefined}
+						style:padding-right={settings.displayVertical ? `${settings.linePadding}rem` : undefined}
+					>{#if settings.showLinePoints}<span style="opacity: 0.1;">• </span>{/if}{text}</p>
+				</div>
+			{/each}
+		</div>
 	</div>
 
 	<div
@@ -1146,13 +1192,18 @@
 					scrollDirection={settings.displayVertical ? 'horizontal' : 'vertical'}
 					padding="2rem"
 				>
+					{#snippet overlay()}
+						{@render toolbar()}
+					{/snippet}
 					{#snippet item({ index, style })}
 						{@const actualIndex = mapIndex(index)}
 						<div
 							{style}
 							class="absolute"
+							class:opacity-50={settings.notesOpen}
 							class:px-4={!settings.displayVertical}
 							class:py-4={settings.displayVertical}
+							class:pt-12={settings.displayVertical}
 							class:w-full={!settings.displayVertical}
 							class:h-full={settings.displayVertical}
 						>
