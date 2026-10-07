@@ -95,6 +95,45 @@ test('paste, edit, delete, undo and selection preserve text and statistics', asy
 	await expect(lines(page)).toHaveCount(2);
 });
 
+test('smooth scroll targets survive hiding the tab and resume unless manually cancelled', async ({ page }) => {
+	await page.addInitScript(() => {
+		localStorage.setItem('bannou-texthooker-enableLineAnimation', '1');
+		localStorage.setItem('bannou-texthooker-lineData', JSON.stringify(
+			Array.from({ length: 100 }, (_, index) => ({ id: `stored-${index}`, text: '保存された文章。' })),
+		));
+	});
+	await page.goto('/');
+	await expect(lines(page).last()).toHaveAttribute('data-line-id', 'stored-99');
+	await page.waitForTimeout(250);
+	await page.evaluate(() => {
+		const scroller = document.querySelector<HTMLElement>('[aria-label="Text history"]')!;
+		let visibility: DocumentVisibilityState = 'visible';
+		Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+		(window as any).setTabVisibility = (value: DocumentVisibilityState) => {
+			visibility = value;
+			document.dispatchEvent(new Event('visibilitychange'));
+		};
+		(window as any).scrollRequests = [];
+		// Model a browser suspending a smooth scroll when the tab becomes hidden.
+		scroller.scrollTo = ((options: ScrollToOptions) => {
+			(window as any).scrollRequests.push(options);
+			(window as any).setTabVisibility('hidden');
+		}) as typeof scroller.scrollTo;
+	});
+	await paste(page, '新しい文章。');
+	await expect.poll(() => page.evaluate(() => (window as any).scrollRequests.length)).toBeGreaterThan(0);
+	await page.waitForTimeout(200);
+	const beforeResume = await page.evaluate(() => (window as any).scrollRequests.length);
+	await page.evaluate(() => (window as any).setTabVisibility('visible'));
+	await expect.poll(() => page.evaluate(() => (window as any).scrollRequests.length)).toBeGreaterThan(beforeResume);
+	expect(await page.evaluate(() => (window as any).scrollRequests.at(-1).behavior)).toBe('smooth');
+	await page.locator('[aria-label="Text history"]').dispatchEvent('wheel');
+	const beforeCancelledResume = await page.evaluate(() => (window as any).scrollRequests.length);
+	await page.evaluate(() => (window as any).setTabVisibility('visible'));
+	await page.waitForTimeout(200);
+	expect(await page.evaluate(() => (window as any).scrollRequests.length)).toBe(beforeCancelledResume);
+});
+
 for (const vertical of [false, true]) {
 	test(`new lines animate in ${vertical ? 'vertical' : 'horizontal'} mode`, async ({ page }) => {
 		await page.addInitScript(({ vertical }) => {
@@ -1241,7 +1280,7 @@ test('embeddable IIFE build mounts and tears down cleanly', async ({ page }) => 
 	await paste(page, '埋め込みの文章。');
 	await expect(lines(page)).toHaveText(['埋め込みの文章。']);
 	await expect.poll(() => page.evaluate(() => (window as any).streamListenerCounts())).toEqual({
-		paste: 1, copy: 1, visibilitychange: 1, resize: 1,
+		paste: 1, copy: 1, visibilitychange: 2, resize: 1,
 	});
 	await page.evaluate(() => (window as any).texthooker.$destroy());
 	await expect(page.locator('header')).toHaveCount(0);

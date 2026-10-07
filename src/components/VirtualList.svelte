@@ -347,8 +347,18 @@
 	}
 
 	function resetScrollTarget() {
+		clearTimeout(scrollTargetTimeout);
 		activeScrollTarget = undefined;
 		scrollTargetTimeout = undefined;
+	}
+
+	function handleVisibilityChange() {
+		if (document.visibilityState === 'hidden') {
+			clearTimeout(scrollTargetTimeout);
+			scrollTargetTimeout = undefined;
+		} else if (activeScrollTarget) {
+			updateState(true);
+		}
 	}
 
 	function handlePropsChange(newCount: number, newDirection: 'vertical' | 'horizontal', newEstimatedSize: number) {
@@ -408,6 +418,7 @@
 		window.addEventListener('pointerup', finishScrollbarDrag);
 		window.addEventListener('pointercancel', finishScrollbarDrag);
 		window.addEventListener('blur', finishScrollbarDrag);
+		document.addEventListener('visibilitychange', handleVisibilityChange);
 
 		if (typeof ResizeObserver !== 'undefined' && rootNode) {
 			resizeObserver = new ResizeObserver(() => {
@@ -420,6 +431,7 @@
 			window.removeEventListener('pointerup', finishScrollbarDrag);
 			window.removeEventListener('pointercancel', finishScrollbarDrag);
 			window.removeEventListener('blur', finishScrollbarDrag);
+			document.removeEventListener('visibilitychange', handleVisibilityChange);
 			clearTimeout(scrollTargetTimeout);
 			if (resizeObserver) {
 				resizeObserver.disconnect();
