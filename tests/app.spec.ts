@@ -937,6 +937,50 @@ test('settings and preset imports use shared actions and preserve the export for
 	await expect(page.locator('main')).toHaveCSS('font-size', '28px');
 });
 
+for (const [index, type] of ['data', 'settings', 'preset'].entries()) {
+	test(`${type} import rejects wrong JSON types without changing existing state`, async ({ page }) => {
+		await page.goto('/');
+		await paste(page, '保存された文章。');
+		await expect.poll(async () => (await storedLines(page)).length).toBe(1);
+		await openSettings(page);
+		const exports = [
+			{ 'bannou-texthooker-timeValue': 90, 'bannou-texthooker-lineData': [{ id: 'new', text: '新しい文章。' }] },
+			{ currentSettings: { fontSize$: 28, websocketUrl$: '' }, settingPresets: [{ name: 'Saved', settings: { fontSize$: 28 } }], lastSettingsPreset: 'Saved' },
+			{ name: 'Imported', settings: { fontSize$: 32, websocketUrl$: '' } },
+		];
+		await page.locator('input[type=file]').nth(1).setInputFiles({
+			name: 'settings.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(exports[1])),
+		});
+		await expect(setting(page, 'Font Size')).toHaveValue('28');
+		const snapshot = () => page.evaluate(() => Object.fromEntries(
+			['fontSize', 'settingPresets', 'lastSettingPreset', 'timeValue'].map((key) => [key, localStorage.getItem(`bannou-texthooker-${key}`)]),
+		));
+		await expect.poll(async () => (await snapshot()).lastSettingPreset).toBe('Saved');
+		const before = await snapshot();
+		const beforeLines = await storedLines(page);
+		const malformed = [
+			{ ...exports[0], 'bannou-texthooker-lineData': [{ id: 'bad', text: 123 }] },
+			{ ...exports[1], currentSettings: { fontSize$: 36 }, settingPresets: [{}] },
+			{ name: 'Bad', settings: { fontSize$: '36' } },
+		];
+		for (const file of [...exports.filter((_, fileIndex) => fileIndex !== index), malformed[index], null]) {
+			await page.locator('input[type=file]').nth(index).setInputFiles({
+				name: 'import.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(file)),
+			});
+			await expect(page.locator('.alert')).toContainText(`Invalid ${type} file`);
+			await page.getByRole('button', { name: 'Confirm', exact: true }).click();
+			await expect(page.locator('input[type=file]').nth(index)).toHaveValue('');
+			expect(await snapshot()).toEqual(before);
+			expect(await storedLines(page)).toEqual(beforeLines);
+		}
+		await page.locator('input[type=file]').nth(index).setInputFiles({
+			name: 'import.JSON', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(exports[index])),
+		});
+		if (index === 0) await expect.poll(async () => (await storedLines(page))[0]?.text).toBe('新しい文章。');
+		else await expect(setting(page, 'Font Size')).toHaveValue(index === 1 ? '28' : '32');
+	});
+}
+
 test('data export and import preserves the existing file format', async ({ page }) => {
 	await page.goto('/');
 	await paste(page, '書き出す文章。');

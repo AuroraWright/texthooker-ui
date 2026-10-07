@@ -4,7 +4,8 @@
 	import { dialogState } from '../stores/dialog-state.svelte';
 	import { appState } from '../stores/app-state.svelte';
 
-	import { settings } from '../stores/settings.svelte';
+	import { defaultSettings, settings } from '../stores/settings.svelte';
+	import { isImportedData, isImportedPreset, isImportedSettings } from '../import-validation';
 	import { getCurrentSettings, updateSettingsWithPreset } from '../stores/presets';
 
 	import {
@@ -213,7 +214,7 @@
 	}
 
 	async function handleDataFileChange() {
-		const data = await loadFile<ExportedData>(dataFileInput).catch(({ message }) => {
+		const data = await loadFile(dataFileInput, isImportedData, 'data').catch(({ message }) => {
 			dialogState.open({
 				type: 'error',
 				message,
@@ -222,37 +223,29 @@
 		});
 
 		if (data) {
-			const entries = Object.entries(data);
-
-			for (let index = 0, { length } = entries; index < length; index += 1) {
-				const [key, value] = entries[index];
-
-				switch (key) {
-					case 'bannou-texthooker-timeValue':
-						settings.timeValue = value;
-						break;
-					case 'bannou-texthooker-userNotes':
-						dataState.userNotes = value;
-						break;
-					case 'bannou-texthooker-lineData':
-						dataState.prepareCharacterCounts(value);
-						dataState.lines = value;
-						break;
-					case 'bannou-texthooker-actionHistory':
-						dataState.actionHistory = value;
-						break;
-					default:
-						break;
-				}
+			const timeValue = data['bannou-texthooker-timeValue'];
+			const userNotes = data['bannou-texthooker-userNotes'];
+			const lines = data['bannou-texthooker-lineData'];
+			const actionHistory = data['bannou-texthooker-actionHistory'];
+			if (timeValue !== undefined) settings.timeValue = timeValue;
+			if (userNotes !== undefined) dataState.userNotes = userNotes;
+			if (lines !== undefined) {
+				dataState.prepareCharacterCounts(lines);
+				dataState.lines = lines;
 			}
+			if (actionHistory !== undefined) dataState.actionHistory = actionHistory;
+			ondataResetOrImported?.();
 		}
 
 		dataFileInput.value = null;
-		ondataResetOrImported?.();
 	}
 
 	async function handleSettingsFileChange() {
-		const data = await loadFile<ExportedSettings>(settingsFileInput).catch(({ message }) => {
+		const data = await loadFile(
+			settingsFileInput,
+			(value): value is ExportedSettings => isImportedSettings(value, defaultSettings),
+			'settings',
+		).catch(({ message }) => {
 			dialogState.open({
 				type: 'error',
 				message,
@@ -273,7 +266,11 @@
 	}
 
 	async function handlePresetFileChange() {
-		const data = await loadFile<SettingPreset>(presetFileInput).catch(({ message }) => {
+		const data = await loadFile(
+			presetFileInput,
+			(value): value is SettingPreset => isImportedPreset(value, defaultSettings),
+			'preset',
+		).catch(({ message }) => {
 			dialogState.open({
 				type: 'error',
 				message,
@@ -556,7 +553,7 @@
 		});
 	}
 
-	function loadFile<T>(inputElement: HTMLInputElement) {
+	function loadFile<T>(inputElement: HTMLInputElement, validate: (value: unknown) => value is T, type: string) {
 		return new Promise<T | void>((resolve, reject) => {
 			const [file] = inputElement.files;
 			const fileReader = new FileReader();
@@ -565,7 +562,7 @@
 				return resolve();
 			}
 
-			if (!file.name.endsWith('.json')) {
+			if (!file.name.toLowerCase().endsWith('.json')) {
 				dialogState.open({
 					type: 'error',
 					message: `Expected json File`,
@@ -576,10 +573,12 @@
 				return resolve();
 			}
 
-			fileReader.addEventListener('loadend', (event) => {
+			fileReader.addEventListener('load', (event) => {
 				try {
 					const data = JSON.parse(event.target.result as string);
-
+					if (!validate(data)) {
+						return reject(new Error(`Invalid ${type} file`));
+					}
 					resolve(data);
 				} catch (error) {
 					reject(new Error('Error parsing File'));
