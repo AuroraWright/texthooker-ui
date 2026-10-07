@@ -95,6 +95,31 @@ test('paste, edit, delete, undo and selection preserve text and statistics', asy
 	await expect(lines(page)).toHaveCount(2);
 });
 
+test('disabling preserve whitespace collapses CJK newlines and full-width indentation without changing stored text', async ({ page }) => {
+	const text = '「長らく西海岸の暗黒街を支配してきた６人の老人は悲運の最期\n\u3000を遂げ、そしてトニー＝ストーンは全ての凶行の黒幕と見なさ\n\u3000れて、法の名の許に裁かれたのです」';
+	await page.goto('/');
+	await paste(page, text);
+	const paragraph = lines(page).first();
+	await expect.poll(() => paragraph.textContent()).toBe(text);
+	await openSettings(page);
+	await setting(page, 'Preserve Whitespace').uncheck();
+	await closeSettings(page);
+	await expect.poll(() => paragraph.textContent()).toBe(text.replace(/\s+/g, ' '));
+	await expect(paragraph).toHaveCSS('white-space', 'normal');
+	await expect.poll(async () => (await storedLines(page))[0]?.text).toBe(text);
+	await paragraph.dblclick();
+	await expect(paragraph).toHaveAttribute('contenteditable', 'true');
+	await expect.poll(() => paragraph.textContent()).toBe(text);
+	await expect(paragraph).toHaveCSS('white-space', 'pre-wrap');
+	await page.locator('main').click({ position: { x: 10, y: 10 } });
+	await expect(paragraph).toHaveAttribute('contenteditable', 'false');
+	await expect.poll(async () => (await storedLines(page))[0]?.text).toBe(text);
+	await openSettings(page);
+	await setting(page, 'Preserve Whitespace').check();
+	await closeSettings(page);
+	await expect.poll(() => paragraph.textContent()).toBe(text);
+});
+
 test('smooth scroll targets survive hiding the tab and resume unless manually cancelled', async ({ page }) => {
 	await page.addInitScript(() => {
 		localStorage.setItem('bannou-texthooker-enableLineAnimation', '1');

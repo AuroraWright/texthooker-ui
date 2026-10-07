@@ -7,7 +7,7 @@
 	import { fly } from 'svelte/transition';
 	import { newLines, pipNewLines } from '../stores/stores';
 	import type { LineItem, LineItemEditEvent } from '../types';
-	import { dummyFn, newLineCharacter } from '../util';
+	import { dummyFn, formatLineText, newLineCharacter } from '../util';
 	import Icon from './Icon.svelte';
 
 	interface Props {
@@ -37,6 +37,7 @@
 	let paragraph: HTMLElement = $state();
 	let originalText = '';
 	let isEditable = $state(false);
+	let displayText = $derived(formatLineText(line.text, settings.preserveWhitespace || isEditable));
 
 	let isVerticalDisplay = $derived(!pipWindow && settings.displayVertical);
 
@@ -75,7 +76,7 @@
 				onselected?.(line.id);
 			}
 		} else {
-			originalText = paragraph.innerText;
+			originalText = line.text;
 			isEditable = true;
 			onedit?.({ inEdit: true });
 			document.addEventListener('click', clickOutsideHandler, false);
@@ -133,7 +134,7 @@
 	class:cursor-text={isEditable}
 	class:border-primary={isSelected}
 	class:border-accent-focus={isEditable}
-	class:whitespace-pre-wrap={settings.preserveWhitespace}
+	class:whitespace-pre-wrap={settings.preserveWhitespace || isEditable}
 	class:show-bullet={settings.showLinePoints}
 	contenteditable={isEditable}
 	ondblclick={handleDblClick}
@@ -142,7 +143,7 @@
 	in:lineFly|global
 >
 	{#if !isEditable && searchQuery}
-		{#each getSegments(line.text, searchQuery) as segment}
+		{#each getSegments(displayText, searchQuery) as segment}
 			{#if segment.match}
 				<mark
 					class="text-black"
@@ -154,7 +155,7 @@
 			{/if}
 		{/each}
 	{:else}
-		{line.text}
+		{displayText}
 	{/if}
 </p>
 {@html newLineCharacter}

@@ -5,6 +5,10 @@ const replaceStringCache = new Map<string, string>();
 
 export function dummyFn() {}
 
+export function formatLineText(text: string, preserveWhitespace: boolean) {
+	return preserveWhitespace ? text : text.replace(/\s+/g, ' ');
+}
+
 export function updateScroll(
 	window: Window,
 	scrollElement: HTMLElement,

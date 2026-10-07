@@ -34,6 +34,7 @@
 		applyAfkBlur,
 		applyCustomCSS,
 		applyReplacements,
+		formatLineText,
 		generateRandomUUID,
 		updateScroll,
 	} from '../util';
@@ -1169,7 +1170,7 @@
 						style:padding-bottom={!settings.displayVertical ? `${settings.linePadding}rem` : undefined}
 						style:padding-left={settings.displayVertical ? `${settings.linePadding}rem` : undefined}
 						style:padding-right={settings.displayVertical ? `${settings.linePadding}rem` : undefined}
-					>{#if settings.showLinePoints}<span style="opacity: 0.1;">• </span>{/if}{text}</p>
+						>{#if settings.showLinePoints}<span style="opacity: 0.1;">• </span>{/if}{formatLineText(text, settings.preserveWhitespace)}</p>
 				</div>
 			{/each}
 		</div>
