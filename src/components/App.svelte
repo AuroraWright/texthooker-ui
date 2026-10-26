@@ -484,7 +484,7 @@
 			lineToRevert = linesToRevert.pop();
 		}
 
-		dataState.lines = currentLines;
+		dataState.assignLines(currentLines);
 
 		if (restoredIds.size > 0) {
 			const addedActualIndices: number[] = [];
@@ -527,7 +527,7 @@
 
 		virtualListController.removeIndices([virtualIndexToRemove]);
 
-		dataState.lines = dataState.lines.slice(0, removedActualIndex);
+		dataState.removeLines((_, index) => index === removedActualIndex);
 		dataState.actionHistory = [...dataState.actionHistory, [{ ...removedLine, index: dataState.lines.length }]];
 
 		lineSizes.delete(removedLine.id);
@@ -539,7 +539,7 @@
 		const newActionHistory: LineItem[] = [];
 		const virtualIndicesToRemove: number[] = [];
 
-		dataState.lines = dataState.lines.filter((oldLine, index) => {
+		dataState.removeLines((oldLine, index) => {
 			const hasLine = linesToDelete.has(oldLine.id);
 
 			linesToDelete.delete(oldLine.id);
@@ -549,10 +549,9 @@
 				newActionHistory.push({ ...oldLine, index: index - newActionHistory.length });
 
 				virtualIndicesToRemove.push(mapIndex(index));
-				return false;
 			}
 
-			return true;
+			return hasLine;
 		});
 
 		selectedLineIds = linesToDelete.size ? [...linesToDelete] : [];
@@ -721,7 +720,7 @@
 				const text = transformLine(data.newText, true, dataState.lineTextCounts, dataState.lines[lineIndex].text);
 
 				if (text) {
-					const currentLines = [...dataState.lines];
+					const currentLines = dataState.lines;
 					currentLines[lineIndex] = cacheLineCharacterCount({ id: data.line.id, text });
 					dataState.lines = currentLines;
 					dataState.actionHistory = [...dataState.actionHistory, [{ ...data.line, index: lineIndex }]];
@@ -756,7 +755,9 @@
 	}
 
 	function applyMaxLinesAndGetRemainingLineData(diffMod = 0, currentLines = dataState.lines) {
-		return currentLines.slice(prepareLeadingLineRemoval(diffMod, currentLines));
+		const startIndex = prepareLeadingLineRemoval(diffMod, currentLines);
+		if (startIndex) currentLines.splice(0, startIndex);
+		return currentLines;
 	}
 
 	async function updateLineData(executeUpdate: boolean) {

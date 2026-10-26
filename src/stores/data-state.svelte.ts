@@ -91,6 +91,40 @@ export class DataState {
 		this.#lines.value = lines;
 	}
 
+	// Copy into the existing array, so derived samples keyed on array identity stay stable.
+	// Assign a new array instead when the content is replaced wholesale and should be resampled.
+	assignLines(next: LineItem[]) {
+		const lines = this.#lines.value;
+		lines.length = next.length;
+		for (let index = 0; index < next.length; index++) lines[index] = next[index];
+		this.lines = lines;
+	}
+
+	// Remove in place like appendLine, so derived samples keyed on array identity stay stable.
+	// The predicate sees the original indices; the array is only compacted after all rows are visited.
+	removeLines(shouldRemove: (line: LineItem, index: number) => boolean) {
+		const lines = this.#lines.value;
+		const removed: LineItem[] = [];
+		let write = 0;
+		for (let index = 0; index < lines.length; index++) {
+			const line = lines[index];
+			if (shouldRemove(line, index)) removed.push(line);
+			else lines[write++] = line;
+		}
+		if (!removed.length) return removed;
+		lines.length = write;
+		if (this.#textCounts) {
+			for (const previous of removed) {
+				const count = this.#textCounts.get(previous.text)! - 1;
+				if (count > 0) this.#textCounts.set(previous.text, count);
+				else this.#textCounts.delete(previous.text);
+			}
+		}
+		this.#lineRevision += 1;
+		this.#lines.value = lines;
+		return removed;
+	}
+
 	get lineTextCounts(): ReadonlyMap<string, number> {
 		if (!settings.preventGlobalDuplicate) return emptyTextCounts;
 		if (!this.#textCounts) {

@@ -28,7 +28,6 @@
 		type DialogResult,
 		type ExportedData,
 		type ExportedSettings,
-		type LineItem,
 		type SettingPreset,
 	} from '../types';
 	import { clickOutside } from '../use-click-outside';
@@ -367,26 +366,23 @@
 			return;
 		}
 
-		const nonDuplicateLines: LineItem[] = [];
 		const nonDuplicateLineText = new Set<string>();
 		const removedIds = new Set<string>();
 		const removedIndices: number[] = [];
 		const startIndex = Math.max(0, dataState.lines.length - settings.preventLastDuplicate - 1);
-		const lines = dataState.lines.slice(startIndex);
 
-		for (let index = 0, { length } = lines; index < length; index += 1) {
-			const line = lines[index];
+		dataState.removeLines((line, index) => {
+			if (index < startIndex) return false;
 
 			if (nonDuplicateLineText.has(line.text)) {
 				removedIds.add(line.id);
-				removedIndices.push(startIndex + index);
-			} else {
-				nonDuplicateLines.push(line);
-				nonDuplicateLineText.add(line.text);
+				removedIndices.push(index);
+				return true;
 			}
-		}
 
-		dataState.lines = [...dataState.lines.slice(0, startIndex), ...nonDuplicateLines];
+			nonDuplicateLineText.add(line.text);
+			return false;
+		});
 		selectedLineIds = selectedLineIds.filter((selectedLineId) => !removedIds.has(selectedLineId));
 
 		if (removedIds.size > 0) {
@@ -466,15 +462,15 @@
 			const removedLineIds = new Set<string>();
 			const removedIndices: number[] = [];
 
-			dataState.lines = dataState.lines.filter((line, index) => {
+			dataState.removeLines((line, index) => {
 				if (uniqueLines.has(line.text)) {
 					removedLineIds.add(line.id);
 					removedIndices.push(index);
-					return false;
+					return true;
 				}
 
 				uniqueLines.add(line.text);
-				return true;
+				return false;
 			});
 			selectedLineIds = selectedLineIds.filter((selectedLineId) => !removedLineIds.has(selectedLineId));
 

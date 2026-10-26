@@ -768,9 +768,94 @@ for (const vertical of [false, true]) {
 			const rect = await page.locator(`[data-line-id="${anchor.id}"]`).boundingBox();
 			expect(rect).not.toBeNull();
 			expect(Math.abs((vertical ? rect.x + rect.width : rect.y) - anchor.position)).toBeLessThan(2);
+			// Removing a line must not resample the size estimate, or the thumb jumps back and forth.
+			const scrollRange = () => root.evaluate((node, vertical) => vertical
+				? node.scrollWidth - node.clientWidth
+				: node.scrollHeight - node.clientHeight, vertical);
+			let previousRange = await scrollRange();
+			for (let deletion = 0; deletion < 8; deletion++) {
+				await toolbar(page, 'Delete last Line');
+				await page.waitForTimeout(150);
+				const range = await scrollRange();
+				expect(range).toBeLessThanOrEqual(previousRange + 1);
+				previousRange = range;
+			}
+			for (let deletion = 0; deletion < 4; deletion++) {
+				// Click inside the visible part so Playwright does not scroll newly measured rows into view.
+				const target = await root.evaluate((node, vertical) => {
+					const viewport = node.getBoundingClientRect();
+					for (const row of node.querySelectorAll<HTMLElement>('[data-line-id]')) {
+						const rect = row.getBoundingClientRect();
+						const left = Math.max(rect.left, viewport.left);
+						const right = Math.min(rect.right, viewport.right - 20);
+						const top = Math.max(rect.top, viewport.top + 60);
+						const bottom = Math.min(rect.bottom, viewport.bottom - 20);
+						if (right - left > 4 && bottom - top > 4)
+							return { id: row.dataset.lineId, x: (left + right) / 2, y: (top + bottom) / 2 };
+					}
+				}, vertical);
+				expect(target).toBeDefined();
+				const id = target.id;
+				await page.keyboard.down('Meta');
+				await page.mouse.dblclick(target.x, target.y);
+				await page.keyboard.up('Meta');
+				await toolbar(page, 'Remove selected Lines');
+				await expect(page.locator(`[data-line-id="${id}"]`)).toHaveCount(0);
+				await page.waitForTimeout(150);
+				// A row entering the rendered window may correct the estimate by part of a row, but no more.
+				const range = await scrollRange();
+				expect(range).toBeLessThan(previousRange + 500);
+				previousRange = range;
+			}
 		});
 	}
 }
+
+test('removals, edits, undo and history limits keep the size estimate sample stable', async ({ page }) => {
+	await page.addInitScript(() => {
+		localStorage.setItem('bannou-texthooker-enableLineAnimation', '0');
+		localStorage.setItem('bannou-texthooker-lineData', JSON.stringify(
+			Array.from({ length: 600 }, (_, index) => ({
+				id: `sample-${index}`,
+				text: '長さの異なる文章が複数行に折り返されます。'.repeat(1 + index % 19),
+			})),
+		));
+	});
+	await page.goto('/');
+	await expect(page.locator('[data-line-id="sample-599"]')).toBeInViewport();
+	// The hidden sample only changes when the size estimate is resampled, which moves the scrollbar thumb.
+	const sample = () => page.locator('[aria-hidden="true"]').first().evaluate((node) => node.textContent);
+	const initialSample = await sample();
+	const confirm = () => page.getByRole('button', { name: 'Confirm', exact: true }).click();
+
+	await toolbar(page, 'Delete last Line');
+	await expect(page.locator('[data-line-id="sample-599"]')).toHaveCount(0);
+	await lines(page).last().dblclick({ modifiers: ['Meta'] });
+	await toolbar(page, 'Remove selected Lines');
+	await expect(page.locator('[data-line-id="sample-598"]')).toHaveCount(0);
+	await toolbar(page, 'Undo last Action');
+	await expect(page.locator('[data-line-id="sample-598"]')).toHaveCount(1);
+	await lines(page).last().dblclick();
+	await lines(page).last().fill('編集した文章。');
+	await page.locator('main').click({ position: { x: 10, y: 10 } });
+	await expect(lines(page).last()).toHaveText('編集した文章。');
+	expect(await sample()).toBe(initialSample);
+
+	await openSettings(page);
+	await setting(page, 'Max lines').fill('550');
+	await setting(page, 'Max lines').blur();
+	await confirm();
+	await expect.poll(async () => (await storedLines(page)).length).toBe(550);
+	await setting(page, 'Prevent Last Line Duplicate').fill('2');
+	await setting(page, 'Prevent Last Line Duplicate').blur();
+	await confirm();
+	await setting(page, 'Prevent Global Duplicate').check();
+	await confirm();
+	// 19 repeating texts plus the edited line.
+	await expect.poll(async () => (await storedLines(page)).length).toBe(20);
+	await closeSettings(page);
+	expect(await sample()).toBe(initialSample);
+});
 
 test('large stored history remains virtualized and searchable in both writing modes', async ({ page }) => {
 	await page.addInitScript(() => {
