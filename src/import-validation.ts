@@ -42,7 +42,10 @@ function isImportedSettingsValue(value: unknown, defaults: Settings): value is S
 				&& typeof replacement.enabled === 'boolean' && Array.isArray(replacement.flags)
 				&& replacement.flags.every((flag) => typeof flag === 'string'));
 		}
-		return typeof defaults[key] === 'number' ? isNumber(setting) : typeof setting === typeof defaults[key];
+		// Older versions stored and exported some numeric settings (e.g. line padding) as strings.
+		return typeof defaults[key] === 'number'
+			? isNumber(setting) || (typeof setting === 'string' && setting.trim() !== '' && isNumber(+setting))
+			: typeof setting === typeof defaults[key];
 	});
 }
 

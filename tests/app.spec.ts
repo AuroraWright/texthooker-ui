@@ -190,6 +190,20 @@ for (const vertical of [false, true]) {
 	});
 }
 
+test('lines inherit the default sans-serif font when no online font is selected', async ({ page }) => {
+	await page.goto('/');
+	await paste(page, '日本語の文章です。');
+	await expect(lines(page)).toHaveCount(1);
+	const fonts = await page.evaluate(() => ({
+		root: getComputedStyle(document.documentElement).fontFamily,
+		main: getComputedStyle(document.querySelector('main')).fontFamily,
+		line: getComputedStyle(document.querySelector('main p[data-line-id]')).fontFamily,
+	}));
+	expect(fonts.root).toContain('sans-serif');
+	expect(fonts.main).toBe(fonts.root);
+	expect(fonts.line).toBe(fonts.root);
+});
+
 test('settings reflow text, reverse order, and persist across reloads', async ({ page }) => {
 	await page.goto('/');
 	await paste(page, '最初の文章。');
@@ -424,6 +438,72 @@ test('reset callbacks preserve confirmation and distinguish lines from all data'
 	await expect(page.locator('.timer')).toContainText('00:00:00');
 });
 
+test('reset all restores every setting, including the history limit and the non-CJK filter', async ({ page }) => {
+	await page.addInitScript(() => {
+		if (sessionStorage.getItem('seeded')) return;
+		sessionStorage.setItem('seeded', '1');
+		localStorage.setItem('bannou-texthooker-maxLines', '20');
+		localStorage.setItem('bannou-texthooker-filterNonCJKLines', '1');
+		localStorage.setItem('bannou-texthooker-fontSize', '30');
+	});
+	await page.goto('/');
+	await openSettings(page);
+	await expect(setting(page, 'Max lines')).toHaveValue('20');
+	await page.getByRole('button', { name: 'Reset All', exact: true }).click();
+	await page.getByRole('button', { name: 'Confirm', exact: true }).click();
+	await expect(setting(page, 'Max lines')).toHaveValue('0');
+	await expect(setting(page, 'Font Size')).toHaveValue('24');
+	await expect.poll(() => page.evaluate(() => [
+		localStorage.getItem('bannou-texthooker-maxLines'),
+		localStorage.getItem('bannou-texthooker-filterNonCJKLines'),
+	])).toEqual(['0', '0']);
+	await page.reload();
+	await openSettings(page);
+	await expect(setting(page, 'Max lines')).toHaveValue('0');
+});
+
+test('a cleared primary websocket stays cleared after reloading', async ({ page }) => {
+	await page.addInitScript(() => {
+		if (sessionStorage.getItem('seeded')) return;
+		sessionStorage.setItem('seeded', '1');
+		localStorage.removeItem('bannou-texthooker-websocketUrl');
+	});
+	await page.goto('/');
+	await openSettings(page);
+	await expect(setting(page, 'Primary Websocket')).toHaveValue('ws://localhost:6677');
+	await setting(page, 'Primary Websocket').fill('');
+	await setting(page, 'Primary Websocket').blur();
+	await expect.poll(() => page.evaluate(() => localStorage.getItem('bannou-texthooker-websocketUrl'))).toBe('');
+	await page.reload();
+	await openSettings(page);
+	await expect(setting(page, 'Primary Websocket')).toHaveValue('');
+});
+
+test('applying replacements keeps unchanged lines when preventing last-line duplicates', async ({ page }) => {
+	await page.addInitScript(() => {
+		localStorage.setItem('bannou-texthooker-preventLastDuplicate', '1');
+		localStorage.setItem('bannou-texthooker-replacements', JSON.stringify([
+			{ pattern: '猫', replaces: '犬', flags: ['g'], enabled: true },
+		]));
+		localStorage.setItem('bannou-texthooker-lineData', JSON.stringify([
+			{ id: 'cat', text: '猫の文章。' }, { id: 'other', text: '別の文章。' }, { id: 'repeat', text: '別の文章。' },
+			{ id: 'dog', text: '犬の文章。' }, { id: 'last', text: '最後の文章。' },
+		]));
+	});
+	await page.goto('/');
+	await expect(lines(page)).toHaveCount(5);
+	await openSettings(page);
+	await page.getByText('Replacements', { exact: true }).click();
+	await page.getByTitle('Apply to current lines', { exact: true }).click();
+	await page.getByRole('button', { name: 'Confirm', exact: true }).click();
+	await closeSettings(page);
+	// Only a line equal to the kept line right before it is removed.
+	await expect(lines(page)).toHaveText(['犬の文章。', '別の文章。', '犬の文章。', '最後の文章。']);
+	await expect
+		.poll(async () => (await storedLines(page)).map((line) => line.id))
+		.toEqual(['cat', 'other', 'dog', 'last']);
+});
+
 test('replacements can be created, toggled and applied to existing text', async ({ page }) => {
 	await page.goto('/');
 	await paste(page, '猫の文章。');
@@ -533,6 +613,7 @@ test.describe('native scrollbar dragging', () => {
 		test(`history-limit removals during dragging keep text visible (vertical=${vertical})`, async ({ page }) => {
 			let socket: import('@playwright/test').WebSocketRoute;
 			await page.routeWebSocket('ws://localhost:6677', (route) => { socket = route; });
+			await page.addInitScript(() => localStorage.setItem('bannou-texthooker-websocketUrl', 'ws://localhost:6677'));
 			const text = '複数行になる日本語の文章。'.repeat(25);
 			await page.addInitScript(({ vertical, text }) => {
 				localStorage.setItem('bannou-texthooker-displayVertical', vertical ? '1' : '0');
@@ -935,9 +1016,10 @@ test('primary and secondary websocket messages update the list', async ({ page }
 	await page.routeWebSocket('ws://localhost:6679', (socket) => {
 		replacement = socket;
 	});
-	await page.addInitScript(() =>
-		localStorage.setItem('bannou-texthooker-secondary-websocketUrl', 'ws://localhost:6678'),
-	);
+	await page.addInitScript(() => {
+		localStorage.setItem('bannou-texthooker-websocketUrl', 'ws://localhost:6677');
+		localStorage.setItem('bannou-texthooker-secondary-websocketUrl', 'ws://localhost:6678');
+	});
 	await page.goto('/');
 	await expect(page.getByTitle('Connected with ws://localhost:6677')).toBeVisible();
 	await expect(page.getByTitle('Connected with ws://localhost:6678')).toBeVisible();
@@ -968,6 +1050,7 @@ for (const vertical of [false, true]) {
 		test(`rapid identical websocket lines retain spacing (vertical=${vertical}, reversed=${reversed})`, async ({ page }) => {
 			let socket: import('@playwright/test').WebSocketRoute;
 			await page.routeWebSocket('ws://localhost:6677', (route) => { socket = route; });
+			await page.addInitScript(() => localStorage.setItem('bannou-texthooker-websocketUrl', 'ws://localhost:6677'));
 			await page.addInitScript(({ vertical, reversed }) => {
 				localStorage.setItem('bannou-texthooker-displayVertical', vertical ? '1' : '0');
 				localStorage.setItem('bannou-texthooker-reverseLineOrder', reversed ? '1' : '0');
@@ -1086,6 +1169,22 @@ test('settings and preset imports use shared actions and preserve the export for
 	await expect(page.locator('main')).toHaveCSS('font-size', '28px');
 });
 
+test('settings exported by older versions with string line padding still import', async ({ page }) => {
+	await page.goto('/');
+	await openSettings(page);
+	const legacy = {
+		currentSettings: { fontSize$: 30, linePadding$: '1.5' },
+		settingPresets: [{ name: '古い設定', settings: { fontSize$: 26, linePadding$: '0.5' } }],
+	};
+	await page.locator('input[type=file]').nth(1).setInputFiles({
+		name: 'texthooker-ui_settings.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(legacy)),
+	});
+	await expect(setting(page, 'Font Size')).toHaveValue('30');
+	await expect(setting(page, 'Line Padding')).toHaveValue('1.5');
+	await expect(page.getByText('Invalid settings file')).toHaveCount(0);
+	expect(await page.evaluate(() => localStorage.getItem('bannou-texthooker-linePadding'))).toBe('1.5');
+});
+
 for (const [index, type] of ['data', 'settings', 'preset'].entries()) {
 	test(`${type} import rejects wrong JSON types without changing existing state`, async ({ page }) => {
 		await page.goto('/');
@@ -1110,7 +1209,7 @@ for (const [index, type] of ['data', 'settings', 'preset'].entries()) {
 		const malformed = [
 			{ ...exports[0], 'bannou-texthooker-lineData': [{ id: 'bad', text: 123 }] },
 			{ ...exports[1], currentSettings: { fontSize$: 36 }, settingPresets: [{}] },
-			{ name: 'Bad', settings: { fontSize$: '36' } },
+			{ name: 'Bad', settings: { fontSize$: 'large' } },
 		];
 		for (const file of [...exports.filter((_, fileIndex) => fileIndex !== index), malformed[index], null]) {
 			await page.locator('input[type=file]').nth(index).setInputFiles({
@@ -1241,6 +1340,40 @@ test('derived counts stay current with hidden totals, edits, undo and milestone 
 	await closeSettings(page);
 	await expect(page.locator('main .milestone')).toHaveCount(0);
 	await expect(page.locator('.timer')).toHaveText('(7/h)');
+});
+
+test('running character totals and milestones match a recount after appends, removals and trimming', async ({ page }) => {
+	await page.addInitScript(() => {
+		localStorage.setItem('bannou-texthooker-characterMilestone', '5');
+		localStorage.setItem('bannou-texthooker-lineData', JSON.stringify([{ id: 'stored', text: 'あいう' }]));
+	});
+	await page.goto('/');
+	const milestones = async () => (await page.locator('main .milestone').allTextContents()).map((text) => text.trim());
+	await expect(lines(page)).toHaveCount(1);
+	await expect(page.locator('main .milestone')).toHaveCount(0);
+	await paste(page, 'えおか');
+	await expect.poll(milestones).toEqual(['Milestone 5 (6)']);
+	await paste(page, 'きくけこさしすせ');
+	await expect.poll(milestones).toEqual(['Milestone 5 (6)', 'Milestone 10 (14)']);
+	await paste(page, 'そ');
+	await expect.poll(milestones).toEqual(['Milestone 5 (6)', 'Milestone 10 (14)', 'Milestone 15 (15)']);
+	await toolbar(page, 'Delete last Line');
+	await expect.poll(milestones).toEqual(['Milestone 5 (6)', 'Milestone 10 (14)']);
+	await paste(page, 'たち');
+	await expect.poll(milestones).toEqual(['Milestone 5 (6)', 'Milestone 10 (14)', 'Milestone 15 (16)']);
+	await openSettings(page);
+	await setting(page, 'Max lines').fill('3');
+	await setting(page, 'Max lines').blur();
+	await page.getByRole('button', { name: 'Confirm', exact: true }).click();
+	await closeSettings(page);
+	// After dropping the first line the totals restart from the remaining history: 3, 11, 13.
+	// A line that crosses several milestones is labelled with the first one it reaches.
+	await expect(lines(page)).toHaveCount(3);
+	await expect.poll(milestones).toEqual(['Milestone 5 (11)']);
+	await paste(page, 'つてと');
+	await expect(lines(page)).toHaveCount(3);
+	// 8, 10, 13
+	await expect.poll(milestones).toEqual(['Milestone 5 (8)', 'Milestone 10 (10)']);
 });
 
 test('floating window stays synchronized and can be reopened', async ({ page, context }) => {

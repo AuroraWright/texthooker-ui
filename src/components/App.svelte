@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { dataState } from '../stores/data-state.svelte';
+	import { changeTextCount, dataState } from '../stores/data-state.svelte';
 	import { dialogState } from '../stores/dialog-state.svelte';
 	import { appState } from '../stores/app-state.svelte';
 	import { setPaused } from '../stores/state-actions';
@@ -80,12 +80,6 @@
 
 	const wakeLockAvailable = 'wakeLock' in navigator;
 	const cjkCharacters = /[\p{scx=Hira}\p{scx=Kana}\p{scx=Han}]/imu;
-
-	function changeTextCount(counts: Map<string, number>, text: string, delta: number) {
-		const count = (counts.get(text) ?? 0) + delta;
-		if (count > 0) counts.set(text, count);
-		else counts.delete(text);
-	}
 
 	function canReceiveLine(lineType: LineType) {
 		const isPaste = lineType === LineType.PASTE;
@@ -692,6 +686,8 @@
 		useReplacements = true,
 		existingTexts: ReadonlyMap<string, number> = dataState.lineTextCounts,
 		excludedText?: string,
+		// The lines a new line follows, for "Prevent Last Line Duplicate".
+		previousLines: readonly LineItem[] = dataState.lines,
 	) {
 		const textToAppend = useReplacements ? applyReplacements(text, dataState.enabledReplacements) : text;
 
@@ -706,8 +702,8 @@
 			canAppend = false;
 		} else if (settings.preventGlobalDuplicate) {
 			canAppend = (existingTexts.get(lineToAppend) ?? 0) <= (lineToAppend === excludedText ? 1 : 0);
-		} else if (settings.preventLastDuplicate && dataState.lines.length) {
-			canAppend = dataState.lines.slice(-settings.preventLastDuplicate).every((line) => line.text !== lineToAppend);
+		} else if (settings.preventLastDuplicate && previousLines.length) {
+			canAppend = previousLines.slice(-settings.preventLastDuplicate).every((line) => line.text !== lineToAppend);
 		}
 
 		return canAppend ? lineToAppend : undefined;
@@ -772,11 +768,13 @@
 			const virtualIndicesToRemove: number[] = [];
 			const virtualIndicesToInvalidate: number[] = [];
 			const CHUNK_SIZE = 100;
+			// Compare each line with the kept lines before it, not with itself at the end of the history.
+			const previousLines: LineItem[] = [];
 
 			for (let index = 0; index < currentLines.length; index++) {
 				const line = currentLines[index];
 				changeTextCount(workingTexts, line.text, -1);
-				const newText = transformLine(line.text, true, workingTexts);
+				const newText = transformLine(line.text, true, workingTexts, undefined, previousLines);
 				if (newText) changeTextCount(workingTexts, newText, 1);
 
 				if (!newText) {
@@ -789,6 +787,10 @@
 					lineSizes.delete(line.id);
 					virtualIndicesToInvalidate.push(mapIndex(index));
 					hasChanges = true;
+				}
+				if (newText) {
+					previousLines.push(currentLines[index]);
+					if (previousLines.length > settings.preventLastDuplicate) previousLines.shift();
 				}
 				if (index > 0 && index % CHUNK_SIZE === 0) {
 					await new Promise((resolve) => setTimeout(resolve, 0));
@@ -905,6 +907,23 @@
 			}
 			lastReflowDimension = currentReflowDimension;
 		}
+	});
+	// Settings that change row sizes invalidate measurements however they change: inputs, presets, imports or reset.
+	let layoutSettingsKey: string | undefined;
+	$effect(() => {
+		const key = JSON.stringify([
+			settings.fontSize,
+			settings.linePadding,
+			settings.onlineFont,
+			settings.displayVertical,
+			settings.reverseLineOrder,
+			settings.preserveWhitespace,
+			settings.showLinePoints,
+			settings.customCSS,
+			settings.characterMilestone,
+		]);
+		if (layoutSettingsKey !== undefined && key !== layoutSettingsKey) untrack(handleLayoutInvalidation);
+		layoutSettingsKey = key;
 	});
 
 	$effect(() => {
@@ -1115,8 +1134,10 @@
 			bind:selectedLineIds
 			onreset={handleReset}
 			onapplyReplacements={() => updateLineData(!!dataState.enabledReplacements.length)}
-			onlayoutChange={handleLayoutInvalidation}
-			onmaxLinesChange={() => (dataState.lines = applyMaxLinesAndGetRemainingLineData())}
+			onmaxLinesChange={() => {
+				dataState.lines = applyMaxLinesAndGetRemainingLineData();
+				handleLayoutInvalidation();
+			}}
 			onlinesRemoved={(ids, indices) => {
 				ids.forEach((id) => lineSizes.delete(id));
 				const previousCount = dataState.lines.length + indices.length;
@@ -1133,13 +1154,13 @@
 			}}
 			ondataResetOrImported={handleDataResetOrImported}
 		/>
-		<Presets isQuickSwitch={true} onlayoutChange={handleLayoutInvalidation} />
+		<Presets isQuickSwitch={true} />
 	</header>
 {/snippet}
 <main
 	class="flex flex-col flex-1 break-all w-full h-full overflow-hidden relative"
 	style:font-size={`${settings.fontSize}px`}
-	style:font-family={settings.onlineFont !== OnlineFont.OFF ? settings.onlineFont : 'undefined'}
+	style:font-family={settings.onlineFont !== OnlineFont.OFF ? settings.onlineFont : undefined}
 	style:writing-mode={settings.displayVertical ? 'vertical-rl' : 'horizontal-tb'}
 >
 	<div
@@ -1264,7 +1285,7 @@
 	class:flex-col-reverse={settings.reverseLineOrder}
 	class:hidden={!pipWindow}
 	style:font-size={`${settings.fontSize}px`}
-	style:font-family={settings.onlineFont !== OnlineFont.OFF ? settings.onlineFont : 'undefined'}
+	style:font-family={settings.onlineFont !== OnlineFont.OFF ? settings.onlineFont : undefined}
 	style:padding-top={`${settings.linePadding}rem`}
 	style:padding-bottom={`${settings.linePadding}rem`}
 	bind:this={pipContainer}

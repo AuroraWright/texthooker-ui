@@ -17,8 +17,16 @@ function historyValue<T>(key: string, shallPersist: () => boolean, onLoaded?: ()
 	});
 }
 
+export function changeTextCount(counts: Map<string, number>, text: string, delta: number) {
+	const count = (counts.get(text) ?? 0) + delta;
+	if (count > 0) counts.set(text, count);
+	else counts.delete(text);
+}
+
 export class DataState {
 	#lineRevision = $state(0);
+	// Counts every change other than a plain append, so derived totals know when to recount from the start.
+	#lineRewrites = 0;
 	#textCounts: Map<string, number> | undefined;
 	#presets = new JSONValue<SettingPreset[]>('bannou-texthooker-settingPresets', []);
 	#replacements = new JSONValue<ReplacementItem[]>('bannou-texthooker-replacements', []);
@@ -65,8 +73,12 @@ export class DataState {
 		this.#lineRevision;
 		return this.#lines.value;
 	}
+	get lineRewrites() {
+		return this.#lineRewrites;
+	}
 	set lines(value: LineItem[]) {
 		this.#textCounts = undefined;
+		this.#lineRewrites += 1;
 		if (value === this.#lines.value) this.#lineRevision += 1;
 		this.#lines.value = value;
 	}
@@ -76,16 +88,11 @@ export class DataState {
 		const lines = this.#lines.value;
 		const removed = removeFirst ? lines.splice(0, removeFirst) : [];
 		if (mergePrevious && lines.length) removed.push(lines.pop()!);
-		if (this.#textCounts) {
-			for (const previous of removed) {
-				const count = this.#textCounts.get(previous.text)! - 1;
-				if (count > 0) this.#textCounts.set(previous.text, count);
-				else this.#textCounts.delete(previous.text);
-			}
-		}
+		if (removed.length) this.#lineRewrites += 1;
 		lines.push(line);
 		if (this.#textCounts) {
-			this.#textCounts.set(line.text, (this.#textCounts.get(line.text) ?? 0) + 1);
+			for (const previous of removed) changeTextCount(this.#textCounts, previous.text, -1);
+			changeTextCount(this.#textCounts, line.text, 1);
 		}
 		this.#lineRevision += 1;
 		this.#lines.value = lines;
@@ -113,12 +120,9 @@ export class DataState {
 		}
 		if (!removed.length) return removed;
 		lines.length = write;
+		this.#lineRewrites += 1;
 		if (this.#textCounts) {
-			for (const previous of removed) {
-				const count = this.#textCounts.get(previous.text)! - 1;
-				if (count > 0) this.#textCounts.set(previous.text, count);
-				else this.#textCounts.delete(previous.text);
-			}
+			for (const previous of removed) changeTextCount(this.#textCounts, previous.text, -1);
 		}
 		this.#lineRevision += 1;
 		this.#lines.value = lines;
@@ -129,9 +133,7 @@ export class DataState {
 		if (!settings.preventGlobalDuplicate) return emptyTextCounts;
 		if (!this.#textCounts) {
 			this.#textCounts = new Map();
-			for (const line of this.#lines.value) {
-				this.#textCounts.set(line.text, (this.#textCounts.get(line.text) ?? 0) + 1);
-			}
+			for (const line of this.#lines.value) changeTextCount(this.#textCounts, line.text, 1);
 		}
 		return this.#textCounts;
 	}

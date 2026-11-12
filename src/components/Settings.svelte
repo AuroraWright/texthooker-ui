@@ -38,7 +38,6 @@
 
 	interface Props {
 		onreset: (linesOnly: boolean) => void | Promise<void>;
-		onlayoutChange?: () => void;
 		onmaxLinesChange?: () => void;
 		onlinesRemoved?: (ids: string[], indices: number[]) => void;
 		onlinesChanged?: (ids: string[], indices: number[]) => void;
@@ -52,7 +51,6 @@
 
 	let {
 		onreset,
-		onlayoutChange,
 		onmaxLinesChange,
 		onlinesRemoved,
 		onlinesChanged,
@@ -257,7 +255,7 @@
 			settings.lastSettingPreset = data.lastSettingsPreset || '';
 
 			if (data.currentSettings) {
-				updateSettingsWithPreset({ name: '', settings: data.currentSettings }, false, onlayoutChange);
+				updateSettingsWithPreset({ name: '', settings: data.currentSettings }, false);
 			}
 		}
 
@@ -287,7 +285,7 @@
 			}
 
 			settings.lastSettingPreset = data.name;
-			updateSettingsWithPreset(data, true, onlayoutChange);
+			updateSettingsWithPreset(data, true);
 		}
 
 		presetFileInput.value = null;
@@ -324,7 +322,6 @@
 
 		target.value = `${settings.characterMilestone}`;
 		dataState.prepareCharacterCounts();
-		onlayoutChange?.();
 	}
 
 	function handleStatisticsToggle(event: Event) {
@@ -440,7 +437,6 @@
 			settings.maxLines = 0;
 		} else {
 			onmaxLinesChange?.();
-			onlayoutChange?.();
 		}
 	}
 
@@ -512,7 +508,6 @@
 
 	function handleCustomCSSBlur(event: FocusEvent) {
 		settings.customCSS = (event.target as HTMLTextAreaElement).value;
-		onlayoutChange?.();
 	}
 
 	async function handleImport(fileInput: HTMLInputElement, message: string) {
@@ -656,7 +651,7 @@
 				<div
 					role="button"
 					class="flex flex-col items-center hover:text-primary"
-					onclick={() => resetAllData(onlayoutChange)}
+					onclick={() => resetAllData(ondataResetOrImported)}
 					onkeyup={dummyFn}
 				>
 					<Icon path={mdiDelete} />
@@ -702,7 +697,7 @@
 				</div>
 			</div>
 		</div>
-		<Presets {onlayoutChange} onexportImportPreset={(detail) => handleExportImportPreset(detail)} />
+		<Presets onexportImportPreset={(detail) => handleExportImportPreset(detail)} />
 		<ReplacementSettings {onapplyReplacements} />
 		<span class="label-text col-span-2">Window Title</span>
 		<input class="input input-bordered h-8 col-span-2" bind:value={settings.windowTitle} />
@@ -724,12 +719,10 @@
 			class="input input-bordered h-8 col-span-2"
 			min="1"
 			bind:value={settings.fontSize}
-			oninput={() => onlayoutChange?.()}
 			onblur={() => {
 				if (!settings.fontSize || settings.fontSize < 1) {
 					settings.fontSize = 24;
 				}
-				onlayoutChange?.();
 			}}
 		/>
 		<span class="label-text col-span-2">Line Padding</span>
@@ -738,12 +731,10 @@
 			class="input input-bordered h-8 col-span-2"
 			min="0"
 			bind:value={settings.linePadding}
-			oninput={() => onlayoutChange?.()}
 			onblur={() => {
 				if (settings.linePadding === null || settings.linePadding < 0) {
 					settings.linePadding = 1;
 				}
-				onlayoutChange?.();
 			}}
 		/>
 		<span class="label-text col-span-2">Character Milestone</span>
@@ -755,7 +746,7 @@
 			onblur={handleCharacterMilestoneBlur}
 		/>
 		<span class="label-text mr-4 col-span-2">Online Font</span>
-		<select class="select col-span-2" bind:value={settings.onlineFont} onchange={() => onlayoutChange?.()}>
+		<select class="select col-span-2" bind:value={settings.onlineFont}>
 			{#each onlineFonts as font (font)}
 				<option value={font}>
 					{font}
@@ -873,21 +864,18 @@
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={settings.displayVertical}
-			onchange={() => onlayoutChange?.()}
 		/>
 		<span class="label-text">Reverse Line Order</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={settings.reverseLineOrder}
-			onchange={() => onlayoutChange?.()}
 		/>
 		<span class="label-text">Preserve Whitespace</span>
 		<input
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={settings.preserveWhitespace}
-			onchange={() => onlayoutChange?.()}
 		/>
 		<span class="label-text">Remove all Whitespace</span>
 		<input
@@ -901,7 +889,6 @@
 			type="checkbox"
 			class="checkbox checkbox-primary ml-2"
 			bind:checked={settings.showLinePoints}
-			onchange={() => onlayoutChange?.()}
 		/>
 		<span class="label-text">Show Timer</span>
 		<input type="checkbox" class="checkbox checkbox-primary ml-2" bind:checked={settings.showTimer} />

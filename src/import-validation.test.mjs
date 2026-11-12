@@ -52,7 +52,7 @@ test('malformed data fields and nested line/history entries reject the whole imp
 });
 
 test('settings and presets validate scalar types, replacements and preset metadata', () => {
-	for (const invalid of [{}, { fontSize$: '28' }, { fontSize$: Infinity }, { enablePaste$: 1 },
+	for (const invalid of [{}, { fontSize$: 'large' }, { fontSize$: '' }, { fontSize$: Infinity }, { enablePaste$: 1 },
 		{ windowTitle$: null }, { replacements$: {} }, { replacements$: [{ pattern: '', replaces: '', flags: [], enabled: 'yes' }] },
 		{ replacements$: [{ pattern: '', replaces: '', flags: [42], enabled: true }] }]) {
 		assert.equal(isImportedSettings({ ...settings, currentSettings: invalid }, defaults), false);
@@ -63,4 +63,10 @@ test('settings and presets validate scalar types, replacements and preset metada
 	assert.equal(isImportedSettings({ ...settings, settingPresets: {} }, defaults), false);
 	assert.equal(isImportedSettings({ ...settings, lastSettingsPreset: 1 }, defaults), false);
 	assert.equal(isImportedPreset({ ...preset, settings: { replacements$: [{ pattern: 'a', replaces: 'b', flags: ['g'], enabled: true }] } }, defaults), true);
+});
+
+test('numeric settings stored as strings by older versions remain importable', () => {
+	assert.equal(isImportedSettings({ ...settings, currentSettings: { fontSize$: '1.5' } }, defaults), true);
+	assert.equal(isImportedSettings({ ...settings, settingPresets: [{ name: 'Old', settings: { fontSize$: '28' } }] }, defaults), true);
+	assert.equal(isImportedPreset({ ...preset, settings: { fontSize$: '28' } }, defaults), true);
 });

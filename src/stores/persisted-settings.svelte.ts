@@ -4,9 +4,9 @@ type SettingValue = string | number | boolean;
 
 export function readSetting<T extends SettingValue>(key: string, defaultValue: T): T {
 	const stored = window.localStorage.getItem(key);
-	return stored
-		? ((typeof defaultValue === 'boolean' ? !!+stored : typeof defaultValue === 'number' ? +stored : stored) as T)
-		: defaultValue;
+	// An empty string is a deliberate value for text settings, e.g. a cleared WebSocket URL.
+	if (stored === null || (stored === '' && typeof defaultValue !== 'string')) return defaultValue;
+	return (typeof defaultValue === 'boolean' ? !!+stored : typeof defaultValue === 'number' ? +stored : stored) as T;
 }
 
 export function persistSetting<T extends SettingValue>(

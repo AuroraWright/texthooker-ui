@@ -11,12 +11,11 @@
 	import Icon from './Icon.svelte';
 
 	interface Props {
-		onlayoutChange?: () => void;
 		onexportImportPreset?: (value: MouseEvent) => void;
 		isQuickSwitch?: boolean;
 	}
 
-	let { onlayoutChange, onexportImportPreset, isQuickSwitch = false }: Props = $props();
+	let { onexportImportPreset, isQuickSwitch = false }: Props = $props();
 
 	const fallbackPresetEntry = [{ name: '' }];
 
@@ -30,7 +29,7 @@
 		const existingEntry = dataState.settingPresets.find((entry) => entry.name === presetName);
 
 		if (existingEntry) {
-			updateSettingsWithPreset(existingEntry, true, onlayoutChange);
+			updateSettingsWithPreset(existingEntry, true);
 		}
 	}
 
